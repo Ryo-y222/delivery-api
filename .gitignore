@@ -1,0 +1,14 @@
+.env
+
+# Goのバイナリ
+delivery-api
+*.exe
+
+# IDE設定
+.idea/
+.vscode/
+*.swp
+
+# OS生成ファイル
+.DS_Store
+Thumbs.db
