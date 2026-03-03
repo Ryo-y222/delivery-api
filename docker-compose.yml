@@ -1,0 +1,36 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: delivery_db
+      MYSQL_USER: delivery_user
+      MYSQL_PASSWORD: delivery_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    restart: on-failure
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_USER: delivery_user
+      DB_PASSWORD: delivery_pass
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: delivery_db
+      PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
