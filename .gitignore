@@ -1,4 +1,8 @@
 .env
+.env.local
+
+#airのbuild先
+tmp/
 
 # Goのバイナリ
 delivery-api
