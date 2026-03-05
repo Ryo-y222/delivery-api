@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ryo-y222/delivery-api/internal/handler"
 	"github.com/ryo-y222/delivery-api/internal/middleware"
+	"github.com/ryo-y222/delivery-api/internal/model"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -35,6 +36,12 @@ func main() {
 	}
 
 	log.Println("✅ DB接続成功！")
+
+	//AutoMigrate
+	if err := db.AutoMigrate(&model.User{}); err != nil {
+		log.Fatal("❌ マイグレーション失敗:", err)
+	}
+	log.Println("✅ マイグレーション完了！")
 
 	// Ginルーター作成
 	r := gin.Default()
