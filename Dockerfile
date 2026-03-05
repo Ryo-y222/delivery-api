@@ -5,7 +5,9 @@ WORKDIR /app
 
 RUN apk add --no-cache git
 
-COPY go.mod ./
+RUN go install github.com/air-verse/air@latest
+
+COPY go.mod go.sum ./
 RUN go mod tidy && go mod download
 
 COPY . .
