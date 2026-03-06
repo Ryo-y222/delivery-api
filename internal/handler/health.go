@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -30,24 +31,26 @@ func (h *HealthHandler) Check(c *gin.Context) {
 	//
 	sqlDB, err := h.db.DB()
 	if err != nil {
+		werr := fmt.Errorf("healthcheck: gormDB() failed: %w", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":         "unhealthy",
 			"database":       "disconnected",
 			"version":        h.version,
 			"uptime_seconds": uptimeSeconds,
-			"error":          err.Error(),
+			"error":          werr.Error(),
 		})
 		return
 	}
 
 	//Pingチェック
 	if err := sqlDB.Ping(); err != nil {
+		werr := fmt.Errorf("headlthcheck: sql ping failed: %w", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":         "unhealthy",
 			"database":       "unreachable",
 			"version":        h.version,
 			"uptime_seconds": uptimeSeconds,
-			"error":          err.Error(),
+			"error":          werr.Error(),
 		})
 		return
 	}

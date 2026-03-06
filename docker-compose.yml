@@ -18,7 +18,9 @@ services:
 
   api:
     restart: on-failure
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     ports:
       - "8080:8080"
     environment:
@@ -31,6 +33,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - .:/app
+      - go_mod:/go/pkg/mod
+      - go_build:/root/.cache/go-build
 
 volumes:
   mysql_data:
+  go_mod:
+  go_build:
