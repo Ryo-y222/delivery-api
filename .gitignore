@@ -4,6 +4,8 @@
 #airのbuild先
 tmp/
 
+tmp/
+
 # Goのバイナリ
 delivery-api
 *.exe
