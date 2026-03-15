@@ -10,6 +10,7 @@ import (
 	"github.com/ryo-y222/delivery-api/internal/handler"
 	"github.com/ryo-y222/delivery-api/internal/middleware"
 	"github.com/ryo-y222/delivery-api/internal/model"
+	"github.com/ryo-y222/delivery-api/internal/repository"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -43,6 +44,11 @@ func main() {
 	}
 	log.Println("✅ マイグレーション完了！")
 
+	// Repojitory
+	userRepo := repository.NewUserRepository(db)
+	// Handler
+	authHandler := handler.NewAuthHandler(userRepo)
+
 	// Ginルーター作成
 	r := gin.Default()
 
@@ -58,6 +64,12 @@ func main() {
 			"message": "Hello from Delivery API!",
 		})
 	})
+
+	//認証ルート
+	auth := r.Group("/api/v1/auth")
+	{
+		auth.POST("/register", authHandler.Register)
+	}
 
 	// ポート8080で起動
 	port := os.Getenv("PORT")

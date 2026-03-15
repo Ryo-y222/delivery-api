@@ -29,6 +29,7 @@ services:
       DB_HOST: db
       DB_PORT: "3306"
       DB_NAME: delivery_db
+      JWT_SECRET: ${JWT_SECRET}
       PORT: "8080"
     depends_on:
       db:
