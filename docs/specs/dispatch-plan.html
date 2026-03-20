@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>配車計画 (Dispatch Plan) - 機能仕様</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .ascii-container { background: #f5f5f5; border: 1px solid #ddd; padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>配車計画 (Dispatch Plan) 機能仕様書</h1>
+      <nav>
+        <a href="index.html">ドキュメント</a>
+        <a href="trip-leg.html">配車区間</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">ドキュメント</a> / 配車計画
+    </div>
+
+    <!-- Overview -->
+    <section>
+      <h2>概要</h2>
+      <p>配車計画 (Dispatch Plan) は、配送プラットフォームの中核機能であり、<strong>1台のトラック × 1日</strong>の運行を表現します。</p>
+      <p>各配車計画は複数の<strong>配車区間 (Trip Leg)</strong>を含み、複合輸送ネットワークにおける単一の物理的な運行単位として機能します。</p>
+      <div class="card">
+        <h3>主な特徴</h3>
+        <ul>
+          <li>トラック・ドライバーと日付の組み合わせで一意に識別</li>
+          <li>複数の配車区間（往路・復路）を包含</li>
+          <li>ステータス管理による運行進捗追跡</li>
+          <li>位置予測APIによるリアルタイム運行監視</li>
+          <li>企業別・日付別の高速検索</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Database Schema -->
+    <section>
+      <h2>データベーススキーマ</h2>
+      <h3>dispatch_plans テーブル</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>制約</th>
+            <th>説明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>BIGINT</td>
+            <td>PRIMARY KEY</td>
+            <td>配車計画ID</td>
+          </tr>
+          <tr>
+            <td><code>company_id</code></td>
+            <td>BIGINT</td>
+            <td>NOT NULL, FK</td>
+            <td>企業ID (companies.id)</td>
+          </tr>
+          <tr>
+            <td><code>vehicle_id</code></td>
+            <td>BIGINT</td>
+            <td>NOT NULL, FK</td>
+            <td>車両ID (vehicles.id)</td>
+          </tr>
+          <tr>
+            <td><code>driver_id</code></td>
+            <td>BIGINT</td>
+            <td>NOT NULL, FK</td>
+            <td>ドライバーID (drivers.id)</td>
+          </tr>
+          <tr>
+            <td><code>plan_date</code></td>
+            <td>DATE</td>
+            <td>NOT NULL</td>
+            <td>運行予定日</td>
+          </tr>
+          <tr>
+            <td><code>status</code></td>
+            <td>VARCHAR(20)</td>
+            <td>NOT NULL, DEFAULT 'planned'</td>
+            <td>ステータス (planned/in_progress/completed/cancelled)</td>
+          </tr>
+          <tr>
+            <td><code>note</code></td>
+            <td>TEXT</td>
+            <td>NULL</td>
+            <td>運行に関する注記・指示</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>TIMESTAMP</td>
+            <td>NOT NULL, DEFAULT CURRENT_TIMESTAMP</td>
+            <td>作成日時</td>
+          </tr>
+          <tr>
+            <td><code>updated_at</code></td>
+            <td>TIMESTAMP</td>
+            <td>NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP</td>
+            <td>更新日時</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>インデックス</h3>
+      <pre><code>-- 高速検索用: 企業別・日付別の配車計画取得
+CREATE INDEX idx_dispatch_plans_company_date ON dispatch_plans(company_id, plan_date);
+
+-- ステータス別フィルタリング用
+CREATE INDEX idx_dispatch_plans_status ON dispatch_plans(status);
+
+-- 車両・ドライバーの稼働状況確認用
+CREATE INDEX idx_dispatch_plans_vehicle_date ON dispatch_plans(vehicle_id, plan_date);
+CREATE INDEX idx_dispatch_plans_driver_date ON dispatch_plans(driver_id, plan_date);</code></pre>
+
+      <h3>ステータス定数 (Go const)</h3>
+      <pre><code>// DispatchPlanStatus represents the status of a dispatch plan
+const (
+  DispatchPlanStatusPlanned     = "planned"       // 計画済み（未開始）
+  DispatchPlanStatusInProgress  = "in_progress"   // 運行中
+  DispatchPlanStatusCompleted   = "completed"     // 完了
+  DispatchPlanStatusCancelled   = "cancelled"     // キャンセル
+)</code></pre>
+    </section>
+
+    <!-- Relationships -->
+    <section>
+      <h2>リレーション</h2>
+      <div class="card">
+        <h3>配車区間との関係</h3>
+        <p>1つの配車計画は複数の配車区間を含みます (1:N 関係)。</p>
+        <ul>
+          <li>往路区間 (outbound): 荷物を積んだ状態で出発地から目的地へ</li>
+          <li>復路区間 (return): 空車で目的地から出発地へ戻る、または別の荷物を探索</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ASCII Art Flow -->
+    <section>
+      <h2>運行フロー図</h2>
+      <p>1つの配車計画の典型的な構成:</p>
+      <div class="ascii-container">
+        <pre>配車計画ID=12345 (2026-03-20)
+vehicle_id=3 (トラック③)
+driver_id=101 (ドライバーA)
+status=in_progress
+
+┌─────────────────────────────────────────┐
+│       配車計画 (Dispatch Plan)           │
+│  トラック③ × 2026-03-20 × ドライバーA   │
+└─────────────────────────────────────────┘
+            │
+    ┌───────┴───────┐
+    ▼               ▼
+┌─────────┐  ┌──────────┐
+│往路区間  │  │復路区間   │
+│(Leg 1)  │  │(Leg 2)   │
+│outbound │  │return    │
+└─────────┘  └──────────┘
+
+Leg 1: 横浜 → 小田原
+  leg_type: outbound
+  cargo_status: loaded (荷物あり)
+  departure_at: 09:00
+  arrival_at: 10:30
+
+Leg 2: 小田原 → 横浜
+  leg_type: return
+  cargo_status: empty_seeking (空車で次の荷物を探索)
+  departure_at: 10:45
+  arrival_at: 12:15</pre>
+      </div>
+    </section>
+
+    <!-- API Endpoints -->
+    <section>
+      <h2>APIエンドポイント</h2>
+
+      <div class="endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/v1/dispatch-plans</span>
+        <div class="desc">新規配車計画を作成</div>
+        <h4>リクエストボディ</h4>
+        <pre><code>{
+  "company_id": 1,
+  "vehicle_id": 3,
+  "driver_id": 101,
+  "plan_date": "2026-03-20",
+  "status": "planned",
+  "note": "横浜営業所から小田原への配送ルート"
+}</code></pre>
+        <h4>レスポンス (201 Created)</h4>
+        <pre><code>{
+  "id": 12345,
+  "company_id": 1,
+  "vehicle_id": 3,
+  "driver_id": 101,
+  "plan_date": "2026-03-20",
+  "status": "planned",
+  "note": "横浜営業所から小田原への配送ルート",
+  "created_at": "2026-03-20T08:00:00Z",
+  "updated_at": "2026-03-20T08:00:00Z"
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/v1/dispatch-plans</span>
+        <div class="desc">企業の配車計画一覧を検索（日付指定）</div>
+        <h4>クエリパラメータ</h4>
+        <pre><code>?company_id=1&date=2026-03-20
+?company_id=1&date=2026-03-20&status=in_progress</code></pre>
+        <h4>レスポンス (200 OK)</h4>
+        <pre><code>{
+  "dispatch_plans": [
+    {
+      "id": 12345,
+      "company_id": 1,
+      "vehicle_id": 3,
+      "driver_id": 101,
+      "plan_date": "2026-03-20",
+      "status": "in_progress",
+      "note": "横浜営業所から小田原への配送ルート",
+      "created_at": "2026-03-20T08:00:00Z",
+      "updated_at": "2026-03-20T09:15:00Z"
+    }
+  ],
+  "total": 1
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/v1/dispatch-plans/:id</span>
+        <div class="desc">特定の配車計画詳細を取得（配車区間を含む）</div>
+        <h4>レスポンス (200 OK)</h4>
+        <pre><code>{
+  "id": 12345,
+  "company_id": 1,
+  "vehicle_id": 3,
+  "driver_id": 101,
+  "plan_date": "2026-03-20",
+  "status": "in_progress",
+  "note": "横浜営業所から小田原への配送ルート",
+  "trip_legs": [
+    {
+      "id": 50001,
+      "dispatch_plan_id": 12345,
+      "leg_order": 1,
+      "origin_address": "神奈川県横浜市中区",
+      "dest_address": "神奈川県小田原市",
+      "departure_at": "2026-03-20T09:00:00Z",
+      "arrival_at": "2026-03-20T10:30:00Z",
+      "leg_type": "outbound",
+      "cargo_status": "loaded",
+      "status": "in_transit"
+    },
+    {
+      "id": 50002,
+      "dispatch_plan_id": 12345,
+      "leg_order": 2,
+      "origin_address": "神奈川県小田原市",
+      "dest_address": "神奈川県横浜市中区",
+      "departure_at": "2026-03-20T10:45:00Z",
+      "arrival_at": "2026-03-20T12:15:00Z",
+      "leg_type": "return",
+      "cargo_status": "empty_seeking",
+      "status": "scheduled"
+    }
+  ],
+  "created_at": "2026-03-20T08:00:00Z",
+  "updated_at": "2026-03-20T09:15:00Z"
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-put">PUT</span>
+        <span class="path">/api/v1/dispatch-plans/:id</span>
+        <div class="desc">配車計画のステータスまたは情報を更新</div>
+        <h4>リクエストボディ</h4>
+        <pre><code>{
+  "status": "completed",
+  "note": "予定通り完了。小田原での遅延なし"
+}</code></pre>
+        <h4>レスポンス (200 OK)</h4>
+        <pre><code>{
+  "id": 12345,
+  "company_id": 1,
+  "vehicle_id": 3,
+  "driver_id": 101,
+  "plan_date": "2026-03-20",
+  "status": "completed",
+  "note": "予定通り完了。小田原での遅延なし",
+  "created_at": "2026-03-20T08:00:00Z",
+  "updated_at": "2026-03-20T12:30:00Z"
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/v1/dispatch-plans/:id/predict</span>
+        <div class="desc">配車計画の現在位置と到着予測を取得</div>
+        <h4>レスポンス (200 OK)</h4>
+        <pre><code>{
+  "dispatch_plan_id": 12345,
+  "current_position": {
+    "latitude": 35.2633,
+    "longitude": 139.1640,
+    "timestamp": "2026-03-20T10:15:00Z",
+    "speed_kmh": 60
+  },
+  "current_trip_leg": {
+    "id": 50001,
+    "leg_order": 1,
+    "leg_type": "outbound",
+    "origin": "神奈川県横浜市中区",
+    "destination": "神奈川県小田原市",
+    "scheduled_arrival": "2026-03-20T10:30:00Z",
+    "predicted_arrival": "2026-03-20T10:28:00Z",
+    "delay_minutes": -2
+  },
+  "next_trip_leg": {
+    "id": 50002,
+    "leg_order": 2,
+    "leg_type": "return",
+    "origin": "神奈川県小田原市",
+    "destination": "神奈川県横浜市中区",
+    "scheduled_departure": "2026-03-20T10:45:00Z",
+    "predicted_departure": "2026-03-20T10:43:00Z"
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- State Transitions -->
+    <section>
+      <h2>ステータス遷移</h2>
+      <div class="ascii-container">
+        <pre>┌─────────┐
+│ planned │  (計画済み)
+└────┬────┘
+     │
+     ▼
+┌─────────────┐
+│ in_progress │  (運行中)
+└────┬────────┘
+     │
+     ├──────────┐
+     ▼          ▼
+┌─────────┐  ┌──────────┐
+│completed│  │cancelled │
+└─────────┘  └──────────┘
+
+遷移ルール:
+- planned → in_progress: 運行開始時
+- in_progress → completed: 全配車区間完了時
+- planned / in_progress → cancelled: キャンセル時</pre>
+      </div>
+    </section>
+
+    <!-- Data Flow -->
+    <section>
+      <h2>データフロー</h2>
+      <p>配車計画の作成から完了までのデータフロー:</p>
+      <div class="ascii-container">
+        <pre>1. 計画策定フェーズ
+   計画者が企業・車両・ドライバーを選択
+   → DispatchPlanを作成 (status: planned)
+
+2. 配車区間登録フェーズ
+   運行経路に基づいて複数のTripLegを登録
+   → 往路: cargo_status=loaded
+   → 復路: cargo_status=empty_seeking (マッチング対象)
+
+3. 運行開始フェーズ
+   → DispatchPlanのステータスをin_progressに更新
+   → ドライバーがTripLegごとに位置情報を送信
+
+4. マッチング実行フェーズ
+   復路区間 (empty_seeking + public/company_only)
+   がマッチングエンジンの対象になる
+   → 荷主の配送依頼と照合
+
+5. 運行完了フェーズ
+   全TripLegがcompletedになると
+   → DispatchPlanもcompletedに更新</pre>
+      </div>
+    </section>
+
+    <!-- Design Notes -->
+    <section>
+      <h2>設計ノート</h2>
+      <div class="card">
+        <h3>indexed lookup performance</h3>
+        <p>社企別・日付別インデックス <code>idx_dispatch_plans_company_date</code> により、特定企業の日次配車計画を高速に取得できます。典型的な検索パターン: "2026-03-20 のトラックの配車計画を全件取得"</p>
+      </div>
+      <div class="card">
+        <h3>配車区間との1:N関係</h3>
+        <p>1つのDispatchPlanは複数のTripLegを保持します。これにより複雑な運行パターン（複数の積卸地点を持つ運行）を表現できます。</p>
+      </div>
+      <div class="card">
+        <h3>位置予測の用途</h3>
+        <p><code>GET /predict</code> エンドポイントは、ドライバーの現在位置と到着予測から遅延・早着を検出し、配送依頼のマッチング判定に利用されます。</p>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <p>配車計画 (Dispatch Plan) 仕様書 | 最終更新: 2026-03-20</p>
+  </footer>
+</body>
+</html>
