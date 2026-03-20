@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delivery Platform - 機能仕様書一覧</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Delivery Platform 機能仕様書</h1>
+      <nav>
+        <a href="index.html">一覧</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <h2>プロダクト概要</h2>
+    <p>運送会社同士の助け合いマッチングプラットフォーム。荷主も参加可能。<br>
+    空車で走るトラックの「帰り荷」問題を解決し、運送業界の空車率を下げる。</p>
+
+    <h3>2つのモード</h3>
+    <table>
+      <tr>
+        <th>モード</th>
+        <th>対象</th>
+        <th>概要</th>
+      </tr>
+      <tr>
+        <td><strong>ソロモード</strong></td>
+        <td>運送会社 1社</td>
+        <td>自社の配車計画・車両・ドライバーを管理。地図で全トラックのルートと予測位置を一覧表示。UIはBqey風のシンプルな左サイドバー。</td>
+      </tr>
+      <tr>
+        <td><strong>マルチモード</strong></td>
+        <td>運送会社 + 荷主</td>
+        <td>ソロモードで登録した空車区間をマッチング市場に公開。荷主 or 他の運送会社とマッチング。チャット・決済まで完結。</td>
+      </tr>
+    </table>
+
+    <h3>技術スタック</h3>
+    <table>
+      <tr><th>レイヤー</th><th>技術</th></tr>
+      <tr><td>バックエンド</td><td>Go + Gin + GORM + MySQL</td></tr>
+      <tr><td>フロントエンド</td><td>React (TypeScript)</td></tr>
+      <tr><td>地図</td><td>Google Maps Platform（Routes API / Maps JavaScript API）</td></tr>
+      <tr><td>決済</td><td>Stripe（PaymentIntent + Billing）</td></tr>
+      <tr><td>インフラ</td><td>Docker / docker-compose</td></tr>
+    </table>
+
+    <h3>アーキテクチャ（三層構造）</h3>
+    <pre><code>handler/   ← HTTPリクエスト/レスポンスの変換のみ
+service/   ← ビジネスロジック
+repository/← DB操作のみ（GORMの詳細を閉じ込める）
+model/     ← データ構造の定義
+dto/       ← レスポンス用の構造体（段階的情報開示）
+util/      ← JWT・パスワードハッシュ等のユーティリティ</code></pre>
+
+    <h2>機能仕様書一覧</h2>
+
+    <div class="card-grid">
+
+      <div class="card">
+        <h3><a href="auth.html">1. 認証</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-security">Security</span></p>
+        <p>ユーザー登録・ログイン・ログアウト。JWT + HTTP-only Cookie。リフレッシュトークンによるセッション維持。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="company.html">2. 会社管理</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-db">DB</span></p>
+        <p>運送会社の登録・更新。DisplayName（匿名）とName（正式名称）の二段階管理。段階的情報開示の起点。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="vehicle.html">3. 車両管理</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-db">DB</span></p>
+        <p>車番・車種・最大積載量の登録。会社に紐づく。ステータス管理（active / maintenance / retired）。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="driver.html">4. ドライバー管理</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-db">DB</span></p>
+        <p>免許情報・資格・事故歴の管理。運行点呼（daily_inspections）は別テーブル。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="dispatch-plan.html">5. 配車計画</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-db">DB</span></p>
+        <p>1台×1日の配車計画を作成。ソロモードの中心機能。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="trip-leg.html">6. 区間管理</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-db">DB</span></p>
+        <p>配車計画の各区間（往路・帰路）。cargo_status / visibility でマッチング対象を制御。マッチングの最小単位。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="dispatch-board.html">7. 配車ボード &amp; 予測位置</a></h3>
+        <p><span class="badge badge-ui">UI</span> <span class="badge badge-api">API</span></p>
+        <p>1つの地図に複数ルートを色分け表示。GPSなしで出発・到着時刻から予測位置を算出。60秒自動更新。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="matching.html">8. マッチング</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-db">DB</span></p>
+        <p>荷主→運送会社、運送会社→運送会社のリクエスト。承認/拒否。ステータスマシンで遷移管理。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="payment.html">9. 決済</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-security">Security</span></p>
+        <p>Stripe PaymentIntent連携。マッチング承認後、決済を経由しないと完了にならない。Webhook受信。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="chat.html">10. チャット &amp; フィルタリング</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-security">Security</span></p>
+        <p>マッチング承認後に自動でチャットルーム作成。電話番号・メール・URLの送信を正規表現でブロック。違反記録。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="review.html">11. レビュー・評価</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-db">DB</span></p>
+        <p>マッチング完了後の相互評価（星1〜5）。会社単位で評価蓄積。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="subscription.html">12. サブスクリプション</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-security">Security</span></p>
+        <p>Stripe Billing連携。free / standard / premium の3プラン。月間マッチング数制限。</p>
+      </div>
+
+      <div class="card">
+        <h3><a href="info-disclosure.html">13. 段階的情報開示</a></h3>
+        <p><span class="badge badge-api">API</span> <span class="badge badge-security">Security</span></p>
+        <p>マッチング段階に応じた会社情報の開示制御。DTO切り替えによるレスポンスフィルタリング。</p>
+      </div>
+
+    </div>
+
+    <h2>データフロー全体像</h2>
+    <div class="flow">
+      <pre>
+[運送会社A] 配車計画作成 → 区間登録（往路: 荷物あり / 帰路: 空車募集中）
+                           ↓ visibility = public に設定
+[荷主 or 運送会社B] 空車区間を検索 → マッチングリクエスト送信（pending）
+                           ↓
+[運送会社A] 承認（approved）→ チャットルーム自動作成 → やり取り
+                           ↓
+[荷主 or B] 決済（payment_pending → succeeded）→ マッチング完了（completed）
+                           ↓
+              相互レビュー → 会社の rating_avg / total_deals に反映
+      </pre>
+    </div>
+
+    <h2>DB テーブル依存関係</h2>
+    <div class="flow">
+      <pre>
+users (Issue #004) ← 完了済み
+  │
+  ▼
+companies (Issue #005) ─── users に company_id 追加
+  │
+  ├────────────────────┐
+  ▼                    ▼
+vehicles (#006)    subscriptions (#014)
+  │
+  ▼
+dispatch_plans (#007)
+  │
+  ▼
+trip_legs (#008)
+  │
+  ├────────────┬─────────────────┐
+  ▼            ▼                 ▼
+matches (#009)  trackings (#015)  配車ボード (#017)
+  │
+  ├────────────┬─────────────────┐
+  ▼            ▼                 ▼
+payments (#010)  chat_rooms (#011)  reviews (#013)
+               chat_messages
+                 │
+                 ▼
+          blocked_patterns (#012)
+          user_violations
+      </pre>
+    </div>
+
+    <h2>ロール一覧</h2>
+    <table>
+      <tr><th>Role</th><th>説明</th><th>主な操作</th></tr>
+      <tr><td><code>owner</code></td><td>運送会社オーナー</td><td>会社設定、配車計画作成・承認、マッチング承認</td></tr>
+      <tr><td><code>dispatcher</code></td><td>配車担当者</td><td>配車計画作成・編集</td></tr>
+      <tr><td><code>driver</code></td><td>ドライバー</td><td>出発/到着報告（ワンタップ）</td></tr>
+      <tr><td><code>shipper</code></td><td>荷主</td><td>便検索、マッチングリクエスト、決済</td></tr>
+      <tr><td><code>admin</code></td><td>システム管理者</td><td>全データ閲覧・管理</td></tr>
+    </table>
+
+  </div>
+
+  <footer>
+    <p>Delivery Platform Feature Specs &mdash; Last updated: 2026-03-20</p>
+  </footer>
+</body>
+</html>
