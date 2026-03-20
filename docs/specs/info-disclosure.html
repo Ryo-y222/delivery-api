@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>段階的情報開示 - delivery-api 仕様書</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>delivery-api 仕様書</h1>
+      <nav>
+        <a href="index.html">← インデックスへ</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">ホーム</a> / <span>段階的情報開示仕様</span>
+    </div>
+
+    <!-- Overview -->
+    <h2>段階的情報開示機能 (Staged Information Disclosure)</h2>
+    <div class="card">
+      <h3>概要</h3>
+      <p>delivery-api の最重要セキュリティ & ビジネスロジックの一つ。マッチングの段階ごとに、会社情報をどの程度開示するかを制御します。検索段階では匿名名称のみ表示し、マッチング承認後にようやく実名・連絡先が見えるようになります。</p>
+      <p style="margin-top: 1rem;"><strong>主な特徴:</strong></p>
+      <ul>
+        <li>4段階: 検索 → マッチング要求 → 承認 → 支払い完了</li>
+        <li>各段階で異なる DTO（Data Transfer Object）を返す</li>
+        <li>同一エンドポイントでもマッチング状況に応じて返却フィールドが変わる</li>
+        <li>直接取引への動機付けを排除し、プラットフォーム内取引を促進</li>
+        <li>実装: Service Layer で match status をチェック → 適切な DTO を選択</li>
+      </ul>
+    </div>
+
+    <!-- Why Staged Disclosure -->
+    <h2>なぜ段階的開示が必要か</h2>
+    <div class="card">
+      <h3>背景: フリーライディング問題</h3>
+      <p><strong>「運送会社の詳細まで表示すると、直接電話でやり取りされてしまう」</strong></p>
+
+      <h3>具体的な問題シナリオ</h3>
+      <ol>
+        <li>ユーザーA が運送会社B を検索</li>
+        <li>B の実名・電話・住所が即座に表示される</li>
+        <li>A は「あ、直接電話した方が早い」と判断</li>
+        <li>直接やり取り → 決済なし → Stripe 手数料未回収</li>
+        <li>レビューも記録されず、信頼スコアが蓄積されない</li>
+        <li>プラットフォームの価値が毀損</li>
+      </ol>
+
+      <h3>対策思想</h3>
+      <p>情報開示を段階的に行うことで、各ステップを通さないと詳細情報に辿り着けない仕組みにする。</p>
+      <ul>
+        <li>検索段階 → 匿名名称 + 評価スコア（信頼度の指標）</li>
+        <li>マッチング要求 → 「この企業と取引したい」という意思表示</li>
+        <li>承認段階 → 実名を開示。但しチャットのみで連絡</li>
+        <li>支払い完了 → 全情報開示（電話・住所等）。この時点で直接やり取りするインセンティブは薄れている</li>
+      </ul>
+    </div>
+
+    <!-- 4 Stages -->
+    <h2>4つの段階と情報開示レベル</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>段階</th>
+            <th>マッチング状態</th>
+            <th>DTO 名</th>
+            <th>開示される情報</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. 検索</strong></td>
+            <td>関係なし</td>
+            <td>CompanySearchResponse</td>
+            <td>display_name, rating_avg, review_count, plan</td>
+          </tr>
+          <tr>
+            <td><strong>2. マッチング要求</strong></td>
+            <td>match = pending</td>
+            <td>CompanyMatchedResponse</td>
+            <td>+ total_deals（取引数）</td>
+          </tr>
+          <tr>
+            <td><strong>3. 承認</strong></td>
+            <td>match = approved</td>
+            <td>CompanyApprovedResponse</td>
+            <td>+ name（実名）</td>
+          </tr>
+          <tr>
+            <td><strong>4. 支払い完了</strong></td>
+            <td>match = completed</td>
+            <td>CompanyFullResponse</td>
+            <td>+ phone, address, email, website</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- DTO Structures -->
+    <h2>DTO 構造体詳細</h2>
+
+    <div class="card">
+      <h3>CompanySearchResponse（段階1: 検索時）</h3>
+      <p>マッチング関係なく、検索時に返されるレスポンス。最小限の情報のみ。</p>
+      <pre><code>type CompanySearchResponse struct {
+  ID          uint      `json:"id"`
+  DisplayName string    `json:"display_name"`     // 匿名名称
+  RatingAvg   float32   `json:"rating_avg"`       // 平均評価
+  ReviewCount uint      `json:"review_count"`     // レビュー数
+  Plan        string    `json:"plan"`             // free/standard/premium
+}
+
+// 例
+{
+  "id": 50,
+  "display_name": "配送太郎運送",
+  "rating_avg": 4.67,
+  "review_count": 15,
+  "plan": "premium"
+}</code></pre>
+    </div>
+
+    <div class="card">
+      <h3>CompanyMatchedResponse（段階2: マッチング要求時）</h3>
+      <p>マッチング pending 状態で、マッチング要求者に返す。total_deals（過去の取引数）を追加。</p>
+      <pre><code>type CompanyMatchedResponse struct {
+  ID          uint      `json:"id"`
+  DisplayName string    `json:"display_name"`
+  RatingAvg   float32   `json:"rating_avg"`
+  ReviewCount uint      `json:"review_count"`
+  Plan        string    `json:"plan"`
+  TotalDeals  uint      `json:"total_deals"`      // 完了したマッチング数
+}
+
+// 例
+{
+  "id": 50,
+  "display_name": "配送太郎運送",
+  "rating_avg": 4.67,
+  "review_count": 15,
+  "plan": "premium",
+  "total_deals": 42                              // 過去42件のマッチング実績
+}</code></pre>
+    </div>
+
+    <div class="card">
+      <h3>CompanyApprovedResponse（段階3: 承認時）</h3>
+      <p>マッチング approved 状態で、当事者に返す。実名を開示。チャット準備段階。</p>
+      <pre><code>type CompanyApprovedResponse struct {
+  ID          uint      `json:"id"`
+  DisplayName string    `json:"display_name"`
+  Name        string    `json:"name"`             // 実名（正式法人名）
+  RatingAvg   float32   `json:"rating_avg"`
+  ReviewCount uint      `json:"review_count"`
+  Plan        string    `json:"plan"`
+  TotalDeals  uint      `json:"total_deals"`
+}
+
+// 例
+{
+  "id": 50,
+  "display_name": "配送太郎運送",
+  "name": "株式会社タイヨウ運送",
+  "rating_avg": 4.67,
+  "review_count": 15,
+  "plan": "premium",
+  "total_deals": 42
+}</code></pre>
+    </div>
+
+    <div class="card">
+      <h3>CompanyFullResponse（段階4: 支払い完了時）</h3>
+      <p>マッチング completed 状態で、全ての情報を開示。直接連絡先を含む。</p>
+      <pre><code>type CompanyFullResponse struct {
+  ID          uint      `json:"id"`
+  DisplayName string    `json:"display_name"`
+  Name        string    `json:"name"`
+  Phone       string    `json:"phone"`            // 電話番号
+  Address     string    `json:"address"`          // 住所
+  Email       string    `json:"email"`            // メールアドレス
+  Website     string    `json:"website"`          // ウェブサイト（オプション）
+  RatingAvg   float32   `json:"rating_avg"`
+  ReviewCount uint      `json:"review_count"`
+  Plan        string    `json:"plan"`
+  TotalDeals  uint      `json:"total_deals"`
+}
+
+// 例
+{
+  "id": 50,
+  "display_name": "配送太郎運送",
+  "name": "株式会社タイヨウ運送",
+  "phone": "090-1234-5678",
+  "address": "東京都渋谷区道玄坂1-2-3",
+  "email": "info@taiyo-transport.jp",
+  "website": "https://taiyo-transport.jp",
+  "rating_avg": 4.67,
+  "review_count": 15,
+  "plan": "premium",
+  "total_deals": 42
+}</code></pre>
+    </div>
+
+    <!-- Implementation in Service Layer -->
+    <h2>実装: Service Layer での DTO 切り替え</h2>
+
+    <div class="card">
+      <h3>Go コード例</h3>
+      <pre><code>// CompanyService.GetCompanyInfo - マッチング状況に応じた DTO 選択
+func (s *CompanyService) GetCompanyInfo(ctx context.Context, companyID, requesterID uint) (interface{}, error) {
+  // 1. 対象会社を取得
+  company, err := s.repo.GetCompany(ctx, companyID)
+  if err != nil {
+    return nil, err
+  }
+
+  // 2. リクエスターと対象会社の間にマッチングがあるか確認
+  match, err := s.matchRepo.GetMatch(ctx, requesterID, companyID)
+  if err != nil && err != gorm.ErrRecordNotFound {
+    return nil, err
+  }
+
+  // 3. マッチング状態に応じて DTO を選択
+  switch {
+  case match == nil:
+    // マッチング関係なし → CompanySearchResponse
+    return &dto.CompanySearchResponse{
+      ID:          company.ID,
+      DisplayName: company.DisplayName,
+      RatingAvg:   company.RatingAvg,
+      ReviewCount: company.ReviewCount,
+      Plan:        company.Plan,
+    }, nil
+
+  case match.Status == "pending":
+    // マッチング要求状態 → CompanyMatchedResponse
+    return &dto.CompanyMatchedResponse{
+      ID:          company.ID,
+      DisplayName: company.DisplayName,
+      RatingAvg:   company.RatingAvg,
+      ReviewCount: company.ReviewCount,
+      Plan:        company.Plan,
+      TotalDeals:  company.TotalDeals,
+    }, nil
+
+  case match.Status == "approved":
+    // マッチング承認状態 → CompanyApprovedResponse
+    return &dto.CompanyApprovedResponse{
+      ID:          company.ID,
+      DisplayName: company.DisplayName,
+      Name:        company.Name,           // 実名開示
+      RatingAvg:   company.RatingAvg,
+      ReviewCount: company.ReviewCount,
+      Plan:        company.Plan,
+      TotalDeals:  company.TotalDeals,
+    }, nil
+
+  case match.Status == "completed" && match.PaymentStatus == "succeeded":
+    // マッチング完了＆決済成功 → CompanyFullResponse（全情報）
+    return &dto.CompanyFullResponse{
+      ID:          company.ID,
+      DisplayName: company.DisplayName,
+      Name:        company.Name,
+      Phone:       company.Phone,          // 電話開示
+      Address:     company.Address,        // 住所開示
+      Email:       company.Email,          // メール開示
+      Website:     company.Website,        // ウェブサイト開示
+      RatingAvg:   company.RatingAvg,
+      ReviewCount: company.ReviewCount,
+      Plan:        company.Plan,
+      TotalDeals:  company.TotalDeals,
+    }, nil
+
+  default:
+    // その他のステータス（rejected など）
+    return &dto.CompanySearchResponse{...}, nil
+  }
+}
+</code></pre>
+    </div>
+
+    <!-- API Endpoint -->
+    <h2>API エンドポイント</h2>
+
+    <div class="endpoint">
+      <span class="method method-get">GET</span>
+      <span class="path">/api/v1/companies/:id</span>
+      <div class="desc">会社情報取得（段階的情報開示を適用）</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>使用例</h4>
+      <p><strong>ケース1:</strong> ユーザーA が 企業50 を検索（マッチング関係なし）</p>
+      <pre><code>GET /api/v1/companies/50
+Authorization: Bearer {token_of_A}
+
+レスポンス (CompanySearchResponse):
+{
+  "id": 50,
+  "display_name": "配送太郎運送",
+  "rating_avg": 4.67,
+  "review_count": 15,
+  "plan": "premium"
+  // → phone, address, email, name は含まれない
+}</code></pre>
+
+      <p style="margin-top: 1.5rem;"><strong>ケース2:</strong> ユーザーA が 企業50 とのマッチングが approved 状態</p>
+      <pre><code>GET /api/v1/companies/50
+Authorization: Bearer {token_of_A}
+
+レスポンス (CompanyApprovedResponse):
+{
+  "id": 50,
+  "display_name": "配送太郎運送",
+  "name": "株式会社タイヨウ運送",    // 実名が追加
+  "rating_avg": 4.67,
+  "review_count": 15,
+  "plan": "premium",
+  "total_deals": 42
+  // → phone, address, email はまだ含まれない
+}</code></pre>
+
+      <p style="margin-top: 1.5rem;"><strong>ケース3:</strong> ユーザーA が 企業50 とのマッチングが completed（決済済み）</p>
+      <pre><code>GET /api/v1/companies/50
+Authorization: Bearer {token_of_A}
+
+レスポンス (CompanyFullResponse):
+{
+  "id": 50,
+  "display_name": "配送太郎運送",
+  "name": "株式会社タイヨウ運送",
+  "phone": "090-1234-5678",         // 電話開示
+  "address": "東京都渋谷区道玄坂1-2-3",  // 住所開示
+  "email": "info@taiyo-transport.jp",  // メール開示
+  "rating_avg": 4.67,
+  "review_count": 15,
+  "plan": "premium",
+  "total_deals": 42
+}</code></pre>
+    </div>
+
+    <!-- Stage Visualization Table -->
+    <h2>各段階別 開示フィールド比較表</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>フィールド</th>
+            <th>検索<br>（関係なし）</th>
+            <th>マッチング要求<br>（pending）</th>
+            <th>承認<br>（approved）</th>
+            <th>完了<br>（completed）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>display_name</code></td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>rating_avg</code></td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>review_count</code></td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>plan</code></td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>total_deals</code></td>
+            <td class="status-rejected">✕</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>name</code></td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-active">✓</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>phone</code></td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>address</code></td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>email</code></td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-active">✓</td>
+          </tr>
+          <tr>
+            <td><code>website</code></td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-rejected">✕</td>
+            <td class="status-active">✓</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Related Features -->
+    <h2>関連機能との連携</h2>
+    <div class="card">
+      <h3>チャット機能（仕様書10）との連携</h3>
+      <p>マッチング approved 状態でチャットルームが自動作成されます。ここで実名が見えるようになるため、チャット内での直接連絡先の交換をフィルタリングで防ぐ必要があります（→ 仕様書10: フィルタリング参照）。</p>
+
+      <h3>評価・レビュー（仕様書11）との連携</h3>
+      <p>マッチング完了後、review を投稿する際も CompanyFullResponse を用いられます。完了段階なので、会社の全情報を閲覧してからレビュー投稿が可能。</p>
+
+      <h3>サブスクリプション（仕様書12）との連携</h3>
+      <p>Premium プラン企業は検索結果での「優先表示」機能が利用可能。CompanySearchResponse の時点でも premium フラグが見えるため、ユーザーが高価値企業を識別できます。</p>
+    </div>
+
+    <!-- Frontend Implementation -->
+    <h2>フロントエンド実装上の注意</h2>
+    <div class="card">
+      <h3>CORS & API キャッシュ</h3>
+      <ul>
+        <li>同じエンドポイント（GET /companies/:id）でも、認証ユーザーのマッチング状態により返却内容が異なる</li>
+        <li>→ <strong>API キャッシュはユーザー & 企業ID の複合キーで管理する必要がある</strong></li>
+        <li>あるいは、キャッシュなしでリアルタイムフェッチ</li>
+      </ul>
+
+      <h3>UI/UX</h3>
+      <ul>
+        <li><strong>検索時:</strong> 匿名名称 + 評価スコアのみ表示。「詳細を見るにはマッチングリクエストを送信」というテキスト提示</li>
+        <li><strong>マッチング要求送信後:</strong> 実名が段階的に表示される UI を工夫（例: 「リクエスト送信完了。相手の詳細情報が表示されました」という通知）</li>
+        <li><strong>完了後:</strong> 実名・電話・住所を完全表示。次回マッチングの際は検索段階からの再スタート</li>
+      </ul>
+
+      <h3>React 実装例</h3>
+      <pre><code>// CompanyCard.tsx
+const CompanyCard: React.FC&lt;{companyId: number}&gt; = ({companyId}) =&gt; {
+  const [company, setCompany] = useState(null);
+  const {authUser} = useAuth();
+
+  useEffect(() =&gt; {
+    // API呼び出し - マッチング状況により DTO が変わる
+    api.get(`/companies/${companyId}`)
+      .then(res =&gt; setCompany(res.data));
+  }, [companyId]);
+
+  return (
+    &lt;div className="company-card"&gt;
+      &lt;h3&gt;{company?.display_name}&lt;/h3&gt;
+      &lt;p&gt;評価: ★{company?.rating_avg}&lt;/p&gt;
+
+      {/* 実名は approved 以上の場合のみ表示 */}
+      {company?.name && &lt;p&gt;法人名: {company.name}&lt;/p&gt;}
+
+      {/* 電話・住所は completed 以上の場合のみ表示 */}
+      {company?.phone && &lt;p&gt;電話: {company.phone}&lt;/p&gt;}
+      {company?.address && &lt;p&gt;住所: {company.address}&lt;/p&gt;}
+    &lt;/div&gt;
+  );
+};</code></pre>
+    </div>
+
+    <!-- Security & Edge Cases -->
+    <h2>セキュリティ & エッジケース</h2>
+    <div class="card">
+      <h3>アクセス制御</h3>
+      <ul>
+        <li>マッチング当事者以外が /companies/:id にアクセスした場合、CompanySearchResponse のみ返す</li>
+        <li>マッチング状態を認証ユーザーID + 対象企業ID で検証（JWT トークンから user_id を抽出）</li>
+      </ul>
+
+      <h3>エッジケース</h3>
+      <ol>
+        <li><strong>rejected マッチング:</strong> 承認されなかったマッチングは、引き続き CompanySearchResponse レベル</li>
+        <li><strong>複数マッチング:</strong> 同一ユーザー/企業間で複数 match が存在する場合、status が最も進んでいるものを使用</li>
+        <li><strong>マッチング削除後:</strong> マッチング削除（論理削除）後は、検索段階に戻る</li>
+        <li><strong>企業情報更新:</strong>企業の phone / address が更新された場合、既存 match.completed マッチングでもリアルタイムで新情報が表示される</li>
+      </ol>
+
+      <h3>データ整合性</h3>
+      <ul>
+        <li>企業の display_name と name は必ず異なること（バリデーション）</li>
+        <li>completed マッチングでも payment_status = "succeeded" に達していない場合は、CompanyApprovedResponse を返す（保守的）</li>
+      </ul>
+    </div>
+
+    <!-- Deployment Considerations -->
+    <h2>デプロイ・運用上の考慮</h2>
+    <div class="card">
+      <h3>ロールアウト</h3>
+      <ul>
+        <li>この機能はシステムの根幹であるため、<strong>全テーブル・エンドポイントで一括導入</strong>を推奨</li>
+        <li>段階的ロールアウトの場合は、feature flag で制御（ON/OFF を分ける）</li>
+      </ul>
+
+      <h3>モニタリング</h3>
+      <ul>
+        <li>API レスポンスに含まれるフィールド数をモニタリング</li>
+        <li>CompanyFullResponse の返却頻度が異常に低い場合 → マッチング完了率の低下を示唆</li>
+      </ul>
+
+      <h3>バージョニング</h3>
+      <ul>
+        <li>API を /v1/ と /v2/ に分けている場合、両方で段階的情報開示を実装する</li>
+      </ul>
+    </div>
+
+    <!-- Sequence Diagram -->
+    <h2>シーケンス図</h2>
+    <div class="flow">
+      <pre>
+ユーザーA              API Server           Service Layer         DB
+   │                     │                       │                 │
+   │─ GET /companies/50 →│                       │                 │
+   │                     │                       │                 │
+   │                     │─ Extract user_id from JWT
+   │                     │                       │                 │
+   │                     │─ GetMatch(A_id, 50)──────→            │
+   │                     │←─ match=nil─────────────────────────── │
+   │                     │                       │                 │
+   │                     │ [match=nil → no relationship]
+   │                     │                       │                 │
+   │                     │─ Build CompanySearchResponse──→         │
+   │                     │  (display_name, rating, plan only)
+   │                     │                       │                 │
+   │ ← CompanySearch────│                       │                 │
+   │  {display_name, rating...}
+   │
+   │─ POST /matches (request to company 50)
+   │                     │                       │                 │
+   │ ← 201 Created (match_id=1000)
+   │
+   │─ GET /companies/50 →│                       │                 │
+   │                     │─ GetMatch(A_id, 50)──────→            │
+   │                     │←─ match(status=pending)───────────────│
+   │                     │                       │                 │
+   │                     │ [status=pending → CompanyMatchedResponse]
+   │                     │                       │                 │
+   │                     │─ Build CompanyMatchedResponse─→         │
+   │                     │  (+ total_deals)      │                 │
+   │                     │                       │                 │
+   │ ← CompanyMatched────│                       │                 │
+   │  {..., total_deals}
+   │
+   │
+   │ [Company 50 approves]
+   │
+   │─ GET /companies/50 →│                       │                 │
+   │                     │─ GetMatch(A_id, 50)──────→            │
+   │                     │←─ match(status=approved)──────────────│
+   │                     │                       │                 │
+   │                     │ [status=approved → CompanyApprovedResponse]
+   │                     │─ Build CompanyApprovedResponse─→        │
+   │                     │  (+ name: real company name)│                 │
+   │                     │                       │                 │
+   │ ← CompanyApproved───│                       │                 │
+   │  {..., name}
+   │
+   │ [Payment completed]
+   │
+   │─ GET /companies/50 →│                       │                 │
+   │                     │─ GetMatch(A_id, 50)──────→            │
+   │                     │←─ match(status=completed, payment=succeeded)
+   │                     │                       │                 │
+   │                     │ [status=completed → CompanyFullResponse]
+   │                     │─ Build CompanyFullResponse────→         │
+   │                     │  (+ phone, address, email)│                 │
+   │                     │                       │                 │
+   │ ← CompanyFull───────│                       │                 │
+   │  {..., phone, address, email}
+      </pre>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Delivery Platform Feature Specs — Last updated: 2026-03-20</p>
+  </footer>
+</body>
+</html>
