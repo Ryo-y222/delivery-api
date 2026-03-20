@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ryo-y222/delivery-api/internal/model"
 	"github.com/ryo-y222/delivery-api/internal/service"
 )
 
@@ -29,6 +30,22 @@ type RegisterRequest struct {
 	Role     string `json:"role" binding:"required,oneof=shipper transport_company"`
 	Company  string `json:"company"`
 	Phone    string `json:"phone"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
+type UserResponse struct {
+	ID    uint   `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+}
+
+func toUserResponse(u *model.User) UserResponse {
+	return UserResponse{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role}
 }
 
 func setAuthCookie(c *gin.Context, token string, secure bool) {
@@ -67,4 +84,30 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	setAuthCookie(c, token, h.secureCookie)
 
 	c.JSON(http.StatusCreated, gin.H{"id": user.ID})
+}
+
+func (h *AuthHandler) Login(c *gin.Context) {
+
+	// 1.リクエストをパース
+	var req LoginRequest
+	err := c.ShouldBindJSON(&req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "入力内容に不備があります。"})
+		return
+	}
+	user, token, err := h.authService.Login(req.Email, req.Password)
+
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		log.Printf("[ERROR] Login failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "サーバーエラー"})
+		return
+	}
+
+	setAuthCookie(c, token, h.secureCookie)
+
+	c.JSON(http.StatusOK, gin.H{"user": toUserResponse(user)})
 }
