@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配送ボード & 予測位置フィーチャー仕様書</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            line-height: 1.8;
+            color: #333;
+            background-color: #f8f9fa;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        header {
+            border-bottom: 3px solid #2c3e50;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        h1 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 2.2em;
+        }
+        .breadcrumb {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-top: 10px;
+        }
+        .breadcrumb a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        h2 {
+            color: #2c3e50;
+            border-left: 4px solid #e74c3c;
+            padding-left: 15px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            font-size: 1.6em;
+        }
+        h3 {
+            color: #34495e;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        .section {
+            margin-bottom: 40px;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .note {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .warning {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+        }
+        pre {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th {
+            background-color: #34495e;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .diagram {
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            line-height: 1.4;
+        }
+        .wireframe {
+            background-color: #f9f9f9;
+            border: 2px dashed #bbb;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+            line-height: 1.3;
+            overflow-x: auto;
+        }
+        .api-endpoint {
+            background-color: #ecf0f1;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        .method-get {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .method-post {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        ul, ol {
+            margin: 15px 0;
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        footer {
+            border-top: 1px solid #ddd;
+            margin-top: 60px;
+            padding-top: 20px;
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .key-diff {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-size: 1.1em;
+        }
+        .feature-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .feature-item {
+            background-color: #f0f8ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .feature-item strong {
+            color: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- ヘッダー -->
+        <header>
+            <h1>📍 配送ボード & 予測位置フィーチャー</h1>
+            <div class="breadcrumb">
+                <a href="../">仕様書</a> / <a href="../">API</a> / 配送ボード
+            </div>
+        </header>
+
+        <!-- キーディファレンシエータ -->
+        <div class="key-diff">
+            <strong>🎯 プラットフォームの最大の差別化要因</strong><br>
+            <br>
+            GPS なし で配送トラックの位置を予測します。<br>
+            出発時刻・到着予定時刻 + ルートデータから、現在位置を算出・補間します。
+        </div>
+
+        <!-- 概要 -->
+        <section class="section">
+            <h2>1. 概要</h2>
+            <p>
+                配送ボードは、複数のトラック配送ルートを 1 つのマップ上にリアルタイムで表示し、
+                各トラックの現在位置を <strong>予測</strong> するシステムです。
+                GPS は使用せず、出発時刻・到着予定時刻・ルートデータから位置を算出します。
+            </p>
+
+            <h3>なぜ GPS ではなく予測を使うのか</h3>
+            <ul>
+                <li><strong>ドライバーが嫌がる：</strong> GPS 24 時間監視は信頼を損ないます</li>
+                <li><strong>ドライバー不足：</strong> 監視を強制できない現状があります</li>
+                <li><strong>十分な精度：</strong> 社内配送管理には、ざっくりした位置予測で十分です</li>
+                <li><strong>プライバシー：</strong> 個人のプライバシーを尊重できます</li>
+                <li><strong>低コスト：</strong> GPS デバイス購入・維持費不要です</li>
+            </ul>
+
+            <div class="note">
+                <strong>💡 ワンタップ報告で精度向上</strong><br>
+                出発・休憩開始/終了・到着を、ドライバーが任意で報告できます。
+                実際の発生時刻が記録され、予測の精度が大幅に向上します。
+            </div>
+        </section>
+
+        <!-- 予測アルゴリズム -->
+        <section class="section">
+            <h2>2. 予測位置アルゴリズム</h2>
+            <p>
+                ルート上の現在位置を以下の手順で計算します：
+            </p>
+
+            <h3>ステップバイステップ説明</h3>
+            <ol>
+                <li>
+                    <strong>ルート取得：</strong> Google Routes API の <code>computeRoutes</code> で
+                    出発地 → 目的地のルート を取得
+                </li>
+                <li>
+                    <strong>ポリラインデコード：</strong> ルートの polyline を座標の列に変換</li>
+                <li>
+                    <strong>ステップ別の経過時間を累積：</strong> 各ステップの duration を積み上げて、
+                    ルート上の各地点での累積時間を記録
+                </li>
+                <li>
+                    <strong>経過時間を計算：</strong> 出発時刻 から 現在時刻 までの差分を算出</li>
+                <li>
+                    <strong>ルート上の位置を特定：</strong> 累積時間がちょうど経過時間に一致する
+                    ポリラインのセグメントを見つける
+                </li>
+                <li>
+                    <strong>補間：</strong> そのセグメント内で線形補間し、正確な座標 (lat, lng) を求める</li>
+            </ol>
+
+            <div class="diagram">
+┌─────────────────────────────────────────────────────────────┐
+│  配送ボード予測位置アルゴリズム (ASCII Diagram)             │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  [出発時刻] [到着予定時刻] [Google Routes API]              │
+│      │              │                 │                      │
+│      └──────────┬───┴──────────────────┘                    │
+│               Google Routes API                              │
+│               computeRoutes 呼び出し                         │
+│                    │                                         │
+│                    ▼                                         │
+│         ┌─────────────────────┐                             │
+│         │ ルートデータ取得      │                             │
+│         │ - Polyline 含む     │                             │
+│         │ - Steps 列          │                             │
+│         └─────────────────────┘                             │
+│                    │                                         │
+│                    ▼                                         │
+│         ┌─────────────────────┐                             │
+│         │ Polyline デコード    │                             │
+│         │ → 座標列に変換       │                             │
+│         │ [(lat1,lng1), ...]  │                             │
+│         └─────────────────────┘                             │
+│                    │                                         │
+│                    ▼                                         │
+│         ┌─────────────────────┐                             │
+│         │ 経過時間を積み上げ    │                             │
+│         │ Step1: 5分           │ → cumTime = [0, 5, ...]   │
+│         │ Step2: 3分 (計8分)   │                             │
+│         │ ...                 │                             │
+│         └─────────────────────┘                             │
+│                    │                                         │
+│                    ▼                                         │
+│         ┌─────────────────────┐                             │
+│         │ 現在の経過時間       │                             │
+│         │ elapsed = now() -    │                             │
+│         │ departure_time      │                             │
+│         └─────────────────────┘                             │
+│                    │                                         │
+│                    ▼                                         │
+│         ┌─────────────────────┐                             │
+│         │ ポリライン上の       │                             │
+│         │ セグメント検索       │                             │
+│         │ elapsed ∈ [t1, t2]  │                             │
+│         └─────────────────────┘                             │
+│                    │                                         │
+│                    ▼                                         │
+│         ┌─────────────────────┐                             │
+│         │ 線形補間             │                             │
+│         │ progress = (elapsed  │                             │
+│         │ - t1) / (t2 - t1)   │                             │
+│         │ lat = lat1 +         │                             │
+│         │ progress * (lat2-lat1)  │                          │
+│         └─────────────────────┘                             │
+│                    │                                         │
+│                    ▼                                         │
+│         ┌─────────────────────┐                             │
+│         │ ✅ 予測位置 (lat, lng) │                             │
+│         └─────────────────────┘                             │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+            </div>
+
+            <h3>2つの時間計算アプローチ</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>アプローチ</th>
+                        <th>説明</th>
+                        <th>推奨</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>A) Google 予測ベース</strong></td>
+                        <td>
+                            Google Routes API の traffic-aware duration を使用。
+                            実際の渋滞を考慮した移動時間を使う。
+                        </td>
+                        <td>✅ 推奨</td>
+                    </tr>
+                    <tr>
+                        <td><strong>B) スケジュール固定ベース</strong></td>
+                        <td>
+                            出発時刻と到着時刻から逆算。
+                            ルート進行度が時間進行度と同じと仮定 (50% 時間 = 50% 進行度)
+                        </td>
+                        <td>シンプル</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="highlight">
+                <strong>⚠️ トラフィック課金回避</strong><br>
+                Google Routes API の traffic-aware option は課金対象です。
+                必要に応じて、スケジュール固定ベースで対応できるよう設計しています。
+            </div>
+        </section>
+
+        <!-- UI ワイヤーフレーム -->
+        <section class="section">
+            <h2>3. UI ワイヤーフレーム</h2>
+            <p>配送ボード画面のレイアウト：</p>
+            <div class="wireframe">
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                          配送ボード (Dispatch Board)                        ║
+╠═══════════════════════════════════════════════════════════════════════════╣
+║                                                                            ║
+║  ┌────────────────────────────────────────────────────────────────────┐  ║
+║  │  [🔄 更新] [設定]  配送計画 ID: #2024-03-20-001                   │  ║
+║  │                                                                    │  ║
+║  │  ┌──────────────────────────────────────────────────────────────┐ │  ║
+║  │  │                     Google Map                              │ │  ║
+║  │  │   ┌─────────────────────────────────────────────────────┐  │ │  ║
+║  │  │   │                                                     │  │ │  ║
+║  │  │   │        ━━━━━━ ルート A (赤)                         │  │ │  ║
+║  │  │   │      ◆━━━━━━◆                    🚚              │  │ │  ║
+║  │  │   │    出発地         ← 現在位置   到着地              │  │ │  ║
+║  │  │   │                   📍 (補間)                        │  │ │  ║
+║  │  │   │                                                     │  │ │  ║
+║  │  │   │     ┏━━━━━━┓ ルート B (青)                          │  │ │  ║
+║  │  │   │   ◆━━━━◆      🚚                                │  │ │  ║
+║  │  │   │ 出発地  現在位置  到着地                            │  │ │  ║
+║  │  │   │                                                     │  │ │  ║
+║  │  │   │  ━━━━━━━━━━━━ ルート C (緑)                       │  │ │  ║
+║  │  │   │ ◆                        🚚 ◆                    │  │ │  ║
+║  │  │   │ 出発地                  現在位置  到着地            │  │ │  ║
+║  │  │   │                                                     │  │ │  ║
+║  │  │   └─────────────────────────────────────────────────────┘  │ │  ║
+║  │  │   🔴 ルートA  🔵 ルートB  🟢 ルートC                       │ │  ║
+║  │  └──────────────────────────────────────────────────────────────┘ │  ║
+║  └────────────────────────────────────────────────────────────────────┘  ║
+║                                                                            ║
+║  ┌────────────────────────────────────────────────────────────────────┐  ║
+║  │  配送トラック一覧                                                    │  ║
+║  ├────────────────────────────────────────────────────────────────────┤  ║
+║  │ ID  │ ナンバープレート │ ルート │ 進捗度 │ 状態    │ 帰り荷 │ アクション │  ║
+║  ├─────┼─────────────────┼────────┼────────┼─────────┼────────┼─────────┤  ║
+║  │ #1  │ 品川 101        │ A      │ 45%    │ 移動中  │ 無    │ [詳細]  │  ║
+║  │ #2  │ 品川 102        │ B      │ 23%    │ 移動中  │ あり  │ [詳細]  │  ║
+║  │ #3  │ 品川 103        │ C      │ 89%    │ 到着予定│ 確認中│ [詳細]  │  ║
+║  │     │                │        │        │        │       │         │  ║
+║  │ [+ トラック追加]                                                      │  ║
+║  └────────────────────────────────────────────────────────────────────┘  ║
+║                                                                            ║
+║  最終更新: 2026-03-20 14:23:45  [自動更新中 60秒ごと]                     ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+            </div>
+
+            <h3>マップ上の要素</h3>
+            <ul>
+                <li><strong>ポリライン：</strong> ルートを色分け (赤/青/緑など) で表示</li>
+                <li><strong>マーカー：</strong> 出発地 (◆)、現在位置 (📍)、到着地 (◆)</li>
+                <li><strong>トラックアイコン：</strong> 🚚 で各トラックの予測位置を表示</li>
+            </ul>
+
+            <h3>トラック一覧テーブル</h3>
+            <ul>
+                <li><strong>ID：</strong> トラック ID</li>
+                <li><strong>ナンバープレート：</strong> トラック識別</li>
+                <li><strong>ルート：</strong> 割り当てられたルート (A/B/C...)</li>
+                <li><strong>進捗度：</strong> ルート全体に対する進行度 (0～100%)</li>
+                <li><strong>状態：</strong> 移動中 / 到着予定 / 到着済み など</li>
+                <li><strong>帰り荷：</strong> 返却荷物の有無 (無/あり/確認中)</li>
+                <li><strong>アクション：</strong> 詳細表示ボタン</li>
+            </ul>
+        </section>
+
+        <!-- トラッキング DB スキーマ -->
+        <section class="section">
+            <h2>4. Trackings テーブル</h2>
+            <p>
+                ワンタップ報告や自動記録をすべて記録するテーブル。
+                この履歴から、予測位置の精度を継続的に向上させます。
+            </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>カラム</th>
+                        <th>型</th>
+                        <th>説明</th>
+                        <th>備考</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>id</code></td>
+                        <td>UUID</td>
+                        <td>一意の記録ID</td>
+                        <td>主キー</td>
+                    </tr>
+                    <tr>
+                        <td><code>dispatch_plan_id</code></td>
+                        <td>UUID</td>
+                        <td>配送計画ID</td>
+                        <td>外部キー</td>
+                    </tr>
+                    <tr>
+                        <td><code>trip_leg_id</code></td>
+                        <td>uint (nullable)</td>
+                        <td>配送ルートのレッグID</td>
+                        <td>出発/到着など特定イベント用。通常NULL</td>
+                    </tr>
+                    <tr>
+                        <td><code>lat</code></td>
+                        <td>decimal(10,7)</td>
+                        <td>緯度</td>
+                        <td>ワンタップ報告時は出発地/到着地の座標</td>
+                    </tr>
+                    <tr>
+                        <td><code>lng</code></td>
+                        <td>decimal(10,7)</td>
+                        <td>経度</td>
+                        <td>ワンタップ報告時は出発地/到着地の座標</td>
+                    </tr>
+                    <tr>
+                        <td><code>recorded_at</code></td>
+                        <td>timestamp</td>
+                        <td>実際のイベント発生時刻</td>
+                        <td>ドライバーが報告した時刻 (重要！)</td>
+                    </tr>
+                    <tr>
+                        <td><code>event_type</code></td>
+                        <td>enum</td>
+                        <td>イベント種別</td>
+                        <td>departure, rest_start, rest_end, arrival, manual_report</td>
+                    </tr>
+                    <tr>
+                        <td><code>created_at</code></td>
+                        <td>timestamp</td>
+                        <td>DB記録時刻</td>
+                        <td>自動タイムスタンプ</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="note">
+                <strong>💾 SQL スキーマ例</strong>
+                <pre>CREATE TABLE trackings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    dispatch_plan_id UUID NOT NULL REFERENCES dispatch_plans(id),
+    trip_leg_id UINT,
+    lat DECIMAL(10, 7) NOT NULL,
+    lng DECIMAL(10, 7) NOT NULL,
+    recorded_at TIMESTAMP NOT NULL,
+    event_type VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (dispatch_plan_id) REFERENCES dispatch_plans(id)
+);</pre>
+            </div>
+        </section>
+
+        <!-- API エンドポイント -->
+        <section class="section">
+            <h2>5. API エンドポイント</h2>
+
+            <h3>5.1 予測位置の取得</h3>
+            <div class="api-endpoint">
+                <span class="method-get">GET</span> <code>/api/v1/dispatch-plans/:id/predict</code>
+            </div>
+            <p>配送計画内のすべてのトラックの現在予測位置を取得します。</p>
+
+            <h4>リクエスト</h4>
+            <pre>{
+  "dispatch_plan_id": "uuid-xxx",
+  "approach": "google"  // or "schedule_fixed"
+}</pre>
+
+            <h4>レスポンス (成功)</h4>
+            <pre>{
+  "status": "success",
+  "dispatch_plan_id": "uuid-xxx",
+  "predictions": [
+    {
+      "trip_leg_id": 1,
+      "truck_id": "truck-001",
+      "plate_number": "品川101",
+      "current_position": {
+        "lat": 35.6895,
+        "lng": 139.6917
+      },
+      "progress_percent": 45.2,
+      "elapsed_seconds": 1872,
+      "total_estimated_seconds": 4140,
+      "departure_time": "2026-03-20T09:00:00Z",
+      "estimated_arrival": "2026-03-20T10:09:00Z",
+      "last_checkpoint": {
+        "type": "departure",
+        "recorded_at": "2026-03-20T09:00:15Z"
+      }
+    },
+    ...
+  ],
+  "updated_at": "2026-03-20T09:31:00Z"
+}</pre>
+
+            <h3>5.2 ワンタップ報告の登録</h3>
+            <div class="api-endpoint">
+                <span class="method-post">POST</span> <code>/api/v1/trackings</code>
+            </div>
+            <p>ドライバーが出発・休憩・到着を報告します。</p>
+
+            <h4>リクエスト</h4>
+            <pre>{
+  "dispatch_plan_id": "uuid-xxx",
+  "trip_leg_id": 1,
+  "event_type": "departure",  // departure, rest_start, rest_end, arrival
+  "lat": 35.6895,
+  "lng": 139.6917,
+  "recorded_at": "2026-03-20T09:00:15Z"
+}</pre>
+
+            <h4>レスポンス (成功)</h4>
+            <pre>{
+  "status": "success",
+  "tracking_id": "uuid-tracking-xxx",
+  "message": "出発を記録しました",
+  "recorded_at": "2026-03-20T09:00:15Z",
+  "event_type": "departure"
+}</pre>
+
+            <h4>レスポンス (エラー)</h4>
+            <pre>{
+  "status": "error",
+  "code": "INVALID_EVENT_TYPE",
+  "message": "event_type は departure, rest_start, rest_end, arrival のいずれかです"
+}</pre>
+
+            <div class="note">
+                <strong>🔄 自動再計算</strong><br>
+                この POST 後、サーバーは自動的に dispatch plan の予測を再計算します。
+                API クライアントは 60 秒以内に GET predict を再呼び出して、更新された位置を取得できます。
+            </div>
+        </section>
+
+        <!-- ワンタップ報告フロー -->
+        <section class="section">
+            <h2>6. ワンタップ報告フロー</h2>
+            <p>
+                ドライバーが 1 タップで現在のイベント (出発・休憩開始・終了・到着) を報告し、
+                実際の発生時刻が記録されます。これにより、予測精度が大幅に向上します。
+            </p>
+
+            <h3>フロー図</h3>
+            <div class="diagram">
+ ドライバー画面
+  ┌─────────────────────────────────┐
+  │  配送作業タイムラッグ             │
+  │                                  │
+  │  [📍 出発]  [🚚 移動中]          │
+  │  [⏸️  休憩] [🏁 到着]           │
+  └─────────────────────────────────┘
+              │
+              │ ドライバーが [📍 出発] をタップ
+              ▼
+  ┌─────────────────────────────────┐
+  │ POST /api/v1/trackings           │
+  │ {                                │
+  │   dispatch_plan_id: "xxx",       │
+  │   trip_leg_id: 1,                │
+  │   event_type: "departure",       │
+  │   lat: 35.6895,                  │
+  │   lng: 139.6917,                 │
+  │   recorded_at: "2026-03-20T...Z" │
+  │ }                                │
+  └─────────────────────────────────┘
+              │
+              ▼
+  ┌─────────────────────────────────┐
+  │ Server: Trackings に記録         │
+  │ ✅ 出発を記録しました             │
+  └─────────────────────────────────┘
+              │
+              ▼
+  ┌─────────────────────────────────┐
+  │ Server: 予測を自動再計算          │
+  │                                  │
+  │ 出発時刻が actual になったので   │
+  │ から現在位置の予測を               │
+  │ 実際の値ベースに更新              │
+  └─────────────────────────────────┘
+              │
+              ▼
+  ┌─────────────────────────────────┐
+  │ Web/管理画面:                    │
+  │ GET /api/v1/dispatch-plans/.../ │
+  │     predict (自動更新 60秒)       │
+  │                                  │
+  │ マップ上のトラックが               │
+  │ より正確な位置で表示               │
+  └─────────────────────────────────┘
+            </div>
+
+            <h3>報告可能なイベント</h3>
+            <ul>
+                <li><strong>出発 (departure)：</strong> 配送拠点から出発</li>
+                <li><strong>休憩開始 (rest_start)：</strong> トラックが停止・休憩</li>
+                <li><strong>休憩終了 (rest_end)：</strong> 休憩から再開</li>
+                <li><strong>到着 (arrival)：</strong> 目的地に到着</li>
+            </ul>
+        </section>
+
+        <!-- Google Routes API の使用 -->
+        <section class="section">
+            <h2>7. Google Routes API の使用</h2>
+            <p>
+                Google Routes API の <code>computeRoutes</code> を使って、
+                出発地から目的地までのルートデータを取得します。
+            </p>
+
+            <h3>リクエスト例 (computeRoutes)</h3>
+            <pre>{
+  "origin": {
+    "location": {
+      "latLng": {
+        "latitude": 35.6895,
+        "longitude": 139.6917
+      }
+    }
+  },
+  "destination": {
+    "location": {
+      "latLng": {
+        "latitude": 35.7006,
+        "longitude": 139.7676
+      }
+    }
+  },
+  "travelMode": "DRIVE",
+  "routingPreference": "TRAFFIC_AWARE_OPTIMAL",
+  "departureTime": "2026-03-20T09:00:00Z"
+}</pre>
+
+            <h3>レスポンス例</h3>
+            <pre>{
+  "routes": [
+    {
+      "legs": [
+        {
+          "startLocation": { "latLng": { "latitude": 35.6895, ... } },
+          "endLocation": { "latLng": { "latitude": 35.7006, ... } },
+          "duration": "1860s",
+          "distanceMeters": 12500,
+          "steps": [
+            {
+              "startLocation": { "latLng": { "latitude": 35.6895, ... } },
+              "endLocation": { "latLng": { "latitude": 35.6904, ... } },
+              "navigationInstruction": { "instructions": "... 左に曲がる ..." },
+              "duration": "120s",
+              "distanceMeters": 800,
+              "polyline": { "encodedPolyline": "..." }
+            },
+            ...
+          ],
+          "polyline": { "encodedPolyline": "ujynF..." }
+        }
+      ]
+    }
+  ]
+}</pre>
+
+            <h3>ポリラインのデコード</h3>
+            <p>
+                Google Polyline Algorithm Format を使って、
+                圧縮された polyline 文字列を座標の列に変換します。
+            </p>
+
+            <h4>デコード例 (疑似コード)</h4>
+            <pre>function decodePolyline(encoded) {
+    let points = [];
+    let lat = 0, lng = 0;
+
+    for (let i = 0; i &lt; encoded.length; i++) {
+        let shift = 0, result = 0;
+        let char;
+
+        do {
+            char = encoded.charCodeAt(i++) - 63;
+            result |= (char & 0x1f) &lt;&lt; shift;
+            shift += 5;
+        } while (char &gt;= 0x20);
+
+        let dlat = (result & 1) ? ~(result &gt;&gt; 1) : (result &gt;&gt; 1);
+        lat += dlat;
+
+        shift = 0;
+        result = 0;
+
+        do {
+            char = encoded.charCodeAt(i++) - 63;
+            result |= (char & 0x1f) &lt;&lt; shift;
+            shift += 5;
+        } while (char &gt;= 0x20);
+
+        let dlng = (result & 1) ? ~(result &gt;&gt; 1) : (result &gt;&gt; 1);
+        lng += dlng;
+
+        points.push({
+            lat: lat / 1e5,
+            lng: lng / 1e5
+        });
+    }
+
+    return points;
+}</pre>
+
+            <h3>API 利用料金</h3>
+            <div class="warning">
+                <strong>⚠️ 注意</strong><br>
+                <ul>
+                    <li><strong>computeRoutes (トラフィック考慮)：</strong>
+                        高額 (~$0.10/リクエスト)</li>
+                    <li><strong>computeRoutes (トラフィック不考慮)：</strong>
+                        低額 (~$0.01/リクエスト)</li>
+                </ul>
+                本実装では、トラフィック不考慮版またはスケジュール固定ベースを推奨します。
+            </div>
+        </section>
+
+        <!-- 精度向上のコツ -->
+        <section class="section">
+            <h2>8. 精度向上のコツ</h2>
+            <p>
+                GPS なし予測の精度を向上させるための施策：
+            </p>
+
+            <div class="feature-list">
+                <div class="feature-item">
+                    <strong>🎯 ワンタップ報告の活用</strong><br>
+                    出発・到着を実際に報告することで、予測の起点と終点が実データになります。
+                    最も効果的な精度向上手段です。
+                </div>
+                <div class="feature-item">
+                    <strong>📍 チェックポイント報告</strong><br>
+                    ルート中盤で「現在ここ」と報告。複数の中継地点データで精度向上。
+                </div>
+                <div class="feature-item">
+                    <strong>⏱️ 遅延手動入力</strong><br>
+                    渋滞や待機時間を手動で入力。以降の予測が調整されます。
+                </div>
+                <div class="feature-item">
+                    <strong>📊 履歴分析</strong><br>
+                    過去の trackings データから、ドライバーごと・ルートごとの
+                    平均遅延を学習。予測時間を調整。
+                </div>
+            </div>
+
+            <h3>推奨実装フロー</h3>
+            <ol>
+                <li>配送開始時に、ドライバーが [出発] をタップ → 実際の departure_time が記録</li>
+                <li>配送中、自動的に 60 秒ごとに GET predict を実行</li>
+                <li>重要な地点 (高速道路出入口など) で [チェックポイント] タップ</li>
+                <li>到着時に [到着] をタップ</li>
+                <li>サーバーが trackings 履歴を分析し、次回の予測をさらに精密化</li>
+            </ol>
+        </section>
+
+        <!-- 制限事項 -->
+        <section class="section">
+            <h2>9. 制限事項・既知の問題</h2>
+            <div class="warning">
+                <strong>⚠️ 重要</strong> 以下のシナリオでは予測精度が大幅に低下します：
+            </div>
+
+            <h3>ルート途中での問題</h3>
+            <ul>
+                <li><strong>大きな渋滞：</strong>
+                    予測では平均速度を想定するが、実際の渋滞は予測不可。
+                    → 対策：ドライバーが遅延を手動報告</li>
+                <li><strong>予期しない停止：</strong>
+                    故障・事故・突然の業務追加など。
+                    → 対策：ワンタップで「その他」イベント報告</li>
+                <li><strong>ルート変更：</strong>
+                    出発後に別ルートに変更した場合、予測は古いルートベース。
+                    → 対策：新ルートで API を再呼び出し</li>
+            </ul>
+
+            <h3>天候・リアルタイム要因</h3>
+            <ul>
+                <li>天候悪化による速度低下は考慮できません</li>
+                <li>道路工事・交通規制は事前登録が必要</li>
+            </ul>
+
+            <h3>改善案</h3>
+            <ul>
+                <li>機械学習を用いた過去データの分析</li>
+                <li>リアルタイムの交通情報 API との連携 (追加課金あり)</li>
+                <li>ドライバー間のデータ共有と学習</li>
+            </ul>
+        </section>
+
+        <!-- まとめ -->
+        <section class="section">
+            <h2>10. まとめ</h2>
+            <div class="highlight">
+                <strong>✨ 配送ボードの価値</strong>
+                <ul>
+                    <li>GPS 非依存で、ドライバーのプライバシーを尊重</li>
+                    <li>低コスト (デバイス不要、API 課金最小化)</li>
+                    <li>ワンタップ報告で実用的な精度を実現</li>
+                    <li>配送業界の人手不足に対応 (強制監視不要)</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- フッター -->
+        <footer>
+            <p>配送ボード & 予測位置フィーチャー仕様書</p>
+            <p>最終更新: 2026-03-20 | バージョン: 1.0</p>
+        </footer>
+    </div>
+</body>
+</html>
