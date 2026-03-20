@@ -1,7 +1,7 @@
-package repository
+package service
 
 import "errors"
 
-var ErrUserNotFound = errors.New("user not found")
-
 var ErrInvalidCredentials = errors.New("invalid credentials")
+
+var ErrEmailAlreadyExists = errors.New("Email already exists")
