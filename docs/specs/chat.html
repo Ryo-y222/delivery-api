@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>チャット & フィルタリング - delivery-api 仕様書</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>delivery-api 仕様書</h1>
+      <nav>
+        <a href="index.html">← インデックスへ</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">ホーム</a> / <span>チャット & フィルタリング仕様</span>
+    </div>
+
+    <!-- Overview -->
+    <h2>チャット & フィルタリング機能 (Chat & Filtering)</h2>
+    <div class="card">
+      <h3>概要</h3>
+      <p>マッチング承認後、自動でチャットルームが作成されます。このチャット機能では、運送会社と荷主（または他の運送会社）が安全にコミュニケーションを行えます。プラットフォーム内でのやり取りを強制し、直接連絡先の交換を防ぐため、メッセージは正規表現に基づいてフィルタリングされます。</p>
+      <p style="margin-top: 1rem;"><strong>主な特徴:</strong></p>
+      <ul>
+        <li>マッチング承認時に自動でチャットルーム作成</li>
+        <li>チャットルーム = 1マッチング = 1ルーム（1対1対応）</li>
+        <li>メッセージの内容に基づくフィルタリング（電話番号、メールアドレス、URL）</li>
+        <li>フィルタリング違反の記録と追跡</li>
+        <li>メッセージ不変性（immutability）の実装</li>
+        <li>正規表現パターンの動的管理</li>
+      </ul>
+    </div>
+
+    <!-- DB Schema -->
+    <h2>データベーススキーマ</h2>
+
+    <div class="card">
+      <h3>chat_rooms テーブル</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>制約</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>チャットルームID</td>
+            <td>PRIMARY KEY, AUTO_INCREMENT</td>
+          </tr>
+          <tr>
+            <td><code>match_id</code></td>
+            <td>uint (FK)</td>
+            <td>マッチングID</td>
+            <td>FOREIGN KEY to matches, UNIQUE INDEX</td>
+          </tr>
+          <tr>
+            <td><code>status</code></td>
+            <td>enum</td>
+            <td>ルームステータス</td>
+            <td>active / closed</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>timestamp</td>
+            <td>作成日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP</td>
+          </tr>
+          <tr>
+            <td><code>updated_at</code></td>
+            <td>timestamp</td>
+            <td>更新日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>chat_messages テーブル</h3>
+      <p><strong>重要:</strong> メッセージはイミュータブル（不変）。作成後は更新されない。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>制約</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>メッセージID</td>
+            <td>PRIMARY KEY, AUTO_INCREMENT</td>
+          </tr>
+          <tr>
+            <td><code>chat_room_id</code></td>
+            <td>uint (FK)</td>
+            <td>チャットルームID</td>
+            <td>FOREIGN KEY to chat_rooms</td>
+          </tr>
+          <tr>
+            <td><code>sender_id</code></td>
+            <td>uint (FK)</td>
+            <td>送信者ユーザーID</td>
+            <td>FOREIGN KEY to users</td>
+          </tr>
+          <tr>
+            <td><code>content</code></td>
+            <td>longtext</td>
+            <td>メッセージ本文</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><code>status</code></td>
+            <td>enum</td>
+            <td>メッセージステータス</td>
+            <td>sent / filtered / warned</td>
+          </tr>
+          <tr>
+            <td><code>filtered_reason</code></td>
+            <td>varchar(255)</td>
+            <td>フィルタリング理由</td>
+            <td>status=filtered の場合のみ設定</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>timestamp</td>
+            <td>作成日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 1rem;"><strong>インデックス:</strong></p>
+      <ul>
+        <li>複合インデックス: (chat_room_id, created_at) ← 時系列取得用</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>blocked_patterns テーブル</h3>
+      <p>メッセージをフィルタリングするための正規表現パターンを管理。管理者画面で動的に追加・変更可能。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>制約</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>パターンID</td>
+            <td>PRIMARY KEY, AUTO_INCREMENT</td>
+          </tr>
+          <tr>
+            <td><code>pattern</code></td>
+            <td>varchar(500)</td>
+            <td>正規表現パターン</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><code>description</code></td>
+            <td>varchar(255)</td>
+            <td>パターンの説明</td>
+            <td>e.g., "電話番号（ハイフンあり）"</td>
+          </tr>
+          <tr>
+            <td><code>is_active</code></td>
+            <td>bool</td>
+            <td>有効フラグ</td>
+            <td>DEFAULT true</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>timestamp</td>
+            <td>作成日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>user_violations テーブル</h3>
+      <p>フィルタリングに引っかかったメッセージを記録。ユーザーの違反回数でスパム判定やアカウント停止を検討。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>制約</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>違反記録ID</td>
+            <td>PRIMARY KEY, AUTO_INCREMENT</td>
+          </tr>
+          <tr>
+            <td><code>user_id</code></td>
+            <td>uint (FK)</td>
+            <td>違反ユーザーID</td>
+            <td>FOREIGN KEY to users</td>
+          </tr>
+          <tr>
+            <td><code>chat_message_id</code></td>
+            <td>uint (FK)</td>
+            <td>該当メッセージID</td>
+            <td>FOREIGN KEY to chat_messages</td>
+          </tr>
+          <tr>
+            <td><code>violation_type</code></td>
+            <td>enum</td>
+            <td>違反タイプ</td>
+            <td>contact_info_leak / spam / abuse</td>
+          </tr>
+          <tr>
+            <td><code>detail</code></td>
+            <td>longtext</td>
+            <td>詳細情報</td>
+            <td>マッチした正規表現パターン等</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>timestamp</td>
+            <td>記録日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Initial Seed Data -->
+    <h2>初期データ（blocked_patterns 種子データ）</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>パターン</th>
+            <th>説明</th>
+            <th>例</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>\d{2,4}[-−]?\d{2,4}[-−]?\d{4}</code></td>
+            <td>電話番号（ハイフンあり/なし）</td>
+            <td>090-1234-5678, 0312345678</td>
+          </tr>
+          <tr>
+            <td><code>[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}</code></td>
+            <td>メールアドレス</td>
+            <td>user@example.com</td>
+          </tr>
+          <tr>
+            <td><code>https?://[^\s]+</code></td>
+            <td>URL（http/https）</td>
+            <td>https://example.com</td>
+          </tr>
+          <tr>
+            <td><code>LINEID|LINE ID</code></td>
+            <td>LINE IDの明示的な提示</td>
+            <td>LINEIDを教えます</td>
+          </tr>
+          <tr>
+            <td><code>電話番号|直接|電話で|メール</code></td>
+            <td>直接連絡への誘導（文脈ベース）</td>
+            <td>電話で話しませんか</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Message Flow -->
+    <h2>メッセージフロー</h2>
+    <div class="flow">
+      <pre>
+ユーザーがメッセージ送信
+         ↓
+[フィルタリング処理]
+① メッセージ内容を取得
+② blocked_patterns テーブルから全アクティブパターンを取得
+③ 各パターンで正規表現マッチを試行
+         ↓
+マッチあり？
+├─ YES → status = "filtered"
+│         create user_violations レコード
+│         クライアントに警告メッセージを返す
+│         （※ メッセージは保存されるが、相手には表示されない）
+│
+└─ NO  → status = "sent"
+         メッセージ保存完了
+         相手にメッセージ配信
+      </pre>
+    </div>
+
+    <!-- Why Filtering -->
+    <h2>フィルタリングの目的</h2>
+    <div class="card">
+      <h3>問題の背景</h3>
+      <p><strong>「会社情報を出せないよう検知」</strong> —</p>
+      <p>プラットフォームを通さずに、ユーザー同士が直接連絡を取ってしまう行為を防ぎたい。</p>
+
+      <h3>ビジネス上の課題</h3>
+      <ul>
+        <li><strong>マネタイズの喪失:</strong> 直接取引されると、Stripe 決済を経由されず、プラットフォーム手数料が失われる</li>
+        <li><strong>品質管理の低下:</strong> 直接取引ではレビュー・評価が記録されず、信頼スコアが蓄積されない</li>
+        <li><strong>税務・法的リスク:</strong> 無追跡取引による脱税の温床になる可能性</li>
+        <li><strong>サポート不在:</strong> トラブル時にプラットフォーム側がサポートできない</li>
+      </ul>
+
+      <h3>対策の考え方</h3>
+      <p>メッセージレベルでの防止ではなく、<strong>段階的情報開示</strong>と組み合わせることで、直接取引の動機自体を減らす戦略も採用しています（→ 仕様書13を参照）。</p>
+    </div>
+
+    <!-- API Endpoints -->
+    <h2>API エンドポイント</h2>
+
+    <div class="endpoint">
+      <span class="method method-post">POST</span>
+      <span class="path">/api/v1/chat-rooms/:id/messages</span>
+      <div class="desc">新規メッセージを送信（フィルタリング処理を含む）</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>リクエスト例</h4>
+      <pre><code>{
+  "content": "明日10時に配送です。よろしくお願いします。"
+}</code></pre>
+      <h4>レスポンス例（正常系）</h4>
+      <pre><code>{
+  "id": 1001,
+  "chat_room_id": 50,
+  "sender_id": 10,
+  "content": "明日10時に配送です。よろしくお願いします。",
+  "status": "sent",
+  "filtered_reason": null,
+  "created_at": "2026-03-20T14:30:00Z"
+}</code></pre>
+      <h4>レスポンス例（フィルタリング）</h4>
+      <pre><code>{
+  "id": 1002,
+  "chat_room_id": 50,
+  "sender_id": 10,
+  "content": "090-1234-5678に連絡ください",
+  "status": "filtered",
+  "filtered_reason": "電話番号（ハイフンあり/なし）",
+  "created_at": "2026-03-20T14:31:00Z",
+  "message": "メッセージ内に連絡先情報が含まれています。プラットフォーム内でのみやり取りしてください。"
+}</code></pre>
+    </div>
+
+    <div class="endpoint">
+      <span class="method method-get">GET</span>
+      <span class="path">/api/v1/chat-rooms/:id/messages</span>
+      <div class="desc">チャットルームのメッセージ一覧取得（時系列順、ページング対応）</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>クエリパラメータ</h4>
+      <ul>
+        <li><code>limit</code> (int): 取得件数（デフォルト: 20）</li>
+        <li><code>offset</code> (int): スキップ件数（デフォルト: 0）</li>
+        <li><code>include_filtered</code> (bool): フィルタリング済みメッセージも含める（デフォルト: false）</li>
+      </ul>
+      <h4>レスポンス例</h4>
+      <pre><code>{
+  "messages": [
+    {
+      "id": 1001,
+      "chat_room_id": 50,
+      "sender_id": 10,
+      "sender_name": "配送太郎",
+      "content": "明日10時に配送です。よろしくお願いします。",
+      "status": "sent",
+      "created_at": "2026-03-20T14:30:00Z"
+    },
+    {
+      "id": 1003,
+      "chat_room_id": 50,
+      "sender_id": 11,
+      "sender_name": "荷主花子",
+      "content": "ありがとうございます。お待ちしています。",
+      "status": "sent",
+      "created_at": "2026-03-20T14:32:00Z"
+    }
+  ],
+  "total": 2,
+  "limit": 20,
+  "offset": 0
+}</code></pre>
+    </div>
+
+    <div class="endpoint">
+      <span class="method method-get">GET</span>
+      <span class="path">/api/v1/chat-rooms</span>
+      <div class="desc">ユーザーが参加するチャットルーム一覧取得</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>クエリパラメータ</h4>
+      <ul>
+        <li><code>match_id</code> (uint): マッチングIDで絞り込み（オプション）</li>
+        <li><code>status</code> (string): ルームステータス（active / closed）</li>
+      </ul>
+      <h4>レスポンス例</h4>
+      <pre><code>{
+  "chat_rooms": [
+    {
+      "id": 50,
+      "match_id": 1000,
+      "status": "active",
+      "other_party_name": "配送太郎",
+      "other_party_company": "ABC運送",
+      "last_message": "ありがとうございます。お待ちしています。",
+      "last_message_at": "2026-03-20T14:32:00Z",
+      "unread_count": 0,
+      "created_at": "2026-03-20T12:00:00Z"
+    }
+  ],
+  "total": 1
+}</code></pre>
+    </div>
+
+    <!-- Auto-Create Behavior -->
+    <h2>チャットルーム自動作成</h2>
+    <div class="card">
+      <h3>トリガー</h3>
+      <p>マッチングのステータスが <code>pending</code> から <code>approved</code> に変わったとき。</p>
+
+      <h3>処理フロー</h3>
+      <ol>
+        <li>マッチング承認APIが呼ばれる（PATCH /api/v1/matches/:id）</li>
+        <li>ステータスを <code>approved</code> に更新</li>
+        <li>トランザクション内で chat_rooms テーブルにレコード作成</li>
+        <li>初期状態: <code>status = "active"</code></li>
+        <li>両者にWebSocketまたはポーリングで「チャットルーム作成」通知を送信</li>
+      </ol>
+
+      <h3>留意事項</h3>
+      <ul>
+        <li>マッチング承認をロールバックした場合、チャットルームも削除（段階的削除）</li>
+        <li>マッチング完了後、チャットルームは <code>closed</code> になる（重要: メッセージ送信を禁止する仕様）</li>
+      </ul>
+    </div>
+
+    <!-- Message Immutability -->
+    <h2>メッセージの不変性（Immutability）</h2>
+    <div class="card">
+      <h3>設計原則</h3>
+      <p>一度送信されたメッセージは、更新されない・削除されない。</p>
+
+      <h3>利点</h3>
+      <ul>
+        <li><strong>監査可能性:</strong> 違反メッセージの歴史が完全に追跡可能</li>
+        <li><strong>データ整合性:</strong> メッセージIDの参照が壊れない</li>
+        <li><strong>法務対応:</strong> チャット履歴がエビデンスとして使える</li>
+      </ul>
+
+      <h3>実装</h3>
+      <ul>
+        <li>chat_messages テーブルに <code>updated_at</code> カラムなし</li>
+        <li>APIレベルでも UPDATE / DELETE エンドポイント不提供</li>
+        <li>アプリケーション層でバリデーション: 送信済みメッセージへのアクセス試行を拒否</li>
+      </ul>
+
+      <h3>削除が必要な場合</h3>
+      <p>ユーザーが削除リクエストを出した場合は、以下の対応を取る:</p>
+      <ol>
+        <li>メッセージ内容をクリア: <code>"[削除済み]"</code> に置き換える</li>
+        <li>新しい履歴レコード（audit_log）を作成</li>
+        <li>実際のレコードは論理削除フラグで保持（または定期的アーカイブ）</li>
+      </ol>
+    </div>
+
+    <!-- Filtering Rules Table -->
+    <h2>フィルタリングルール詳細</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>ルール名</th>
+            <th>正規表現</th>
+            <th>マッチ例</th>
+            <th>violation_type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>電話番号（ハイフンあり）</td>
+            <td><code>\d{2,4}-\d{2,4}-\d{4}</code></td>
+            <td>090-1234-5678</td>
+            <td>contact_info_leak</td>
+          </tr>
+          <tr>
+            <td>電話番号（ハイフンなし）</td>
+            <td><code>\d{10,11}</code></td>
+            <td>09012345678</td>
+            <td>contact_info_leak</td>
+          </tr>
+          <tr>
+            <td>メールアドレス</td>
+            <td><code>[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}</code></td>
+            <td>contact@example.com</td>
+            <td>contact_info_leak</td>
+          </tr>
+          <tr>
+            <td>URL</td>
+            <td><code>https?://[^\s]+</code></td>
+            <td>https://example.com</td>
+            <td>contact_info_leak</td>
+          </tr>
+          <tr>
+            <td>LINE ID</td>
+            <td><code>(?i)(LINE|line)[-_]?ID</code></td>
+            <td>LINE-ID, LineID</td>
+            <td>contact_info_leak</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Sequence Diagram -->
+    <h2>シーケンス図</h2>
+    <div class="flow">
+      <pre>
+Client              API Server          Service Layer       DB
+  │                    │                     │              │
+  │─POST /messages──→  │                     │              │
+  │                    │──validate───→       │              │
+  │                    │                     │              │
+  │                    │                     │─lock chat_room
+  │                    │                     │              │
+  │                    │─get blocked_patterns────────────→│
+  │                    │←────patterns────────────────────│
+  │                    │                     │              │
+  │                    │     [regex match loop]              │
+  │                    │                     │              │
+  │                    │ filtered? → create user_violations │
+  │                    │                     │─insert────→│
+  │                    │                     │              │
+  │                    │     insert chat_message────────→│
+  │                    │                     │              │
+  │                    │←────success─────────┤              │
+  │←─200/filtered──    │                     │              │
+  │
+      </pre>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Delivery Platform Feature Specs — Last updated: 2026-03-20</p>
+  </footer>
+</body>
+</html>
