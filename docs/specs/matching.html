@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マッチング仕様書 | デリバリーAPI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1>デリバリープラットフォーム API</h1>
+            <p class="subtitle">マッチング仕様書</p>
+        </div>
+    </header>
+
+    <nav class="breadcrumb">
+        <div class="container">
+            <a href="../index.html">ドキュメント</a>
+            <span class="separator">/</span>
+            <a href="index.html">仕様書</a>
+            <span class="separator">/</span>
+            <span class="current">マッチング</span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <section class="overview">
+            <h2>概要</h2>
+            <p>
+                マッチング機能は、配送を依頼する荷主（Shipper）と、配送を実施する配送事業者（Company）を結びつけるコア機能です。
+                トリップの脚部（Trip Leg）に対して、空の状態で配送可能な容積がある場合、マッチング要求を作成し、
+                承認フロー、決済フロー、完了フローを経て配送を実現します。
+            </p>
+        </section>
+
+        <section class="database-schema">
+            <h2>データベーススキーマ</h2>
+            <h3>matches テーブル</h3>
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>カラム名</th>
+                        <th>型</th>
+                        <th>説明</th>
+                        <th>制約</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>id</td>
+                        <td>UUID</td>
+                        <td>マッチング要求の一意識別子</td>
+                        <td>PRIMARY KEY</td>
+                    </tr>
+                    <tr>
+                        <td>trip_leg_id</td>
+                        <td>UUID</td>
+                        <td>対象となるトリップの脚部ID</td>
+                        <td>NOT NULL, FOREIGN KEY</td>
+                    </tr>
+                    <tr>
+                        <td>requester_id</td>
+                        <td>UUID</td>
+                        <td>マッチング要求者のユーザーID</td>
+                        <td>NOT NULL, FOREIGN KEY</td>
+                    </tr>
+                    <tr>
+                        <td>requester_company_id</td>
+                        <td>UUID</td>
+                        <td>要求者が属する企業ID（荷主の場合はNULL）</td>
+                        <td>NULLABLE, FOREIGN KEY</td>
+                    </tr>
+                    <tr>
+                        <td>cargo_weight</td>
+                        <td>DECIMAL(10,2)</td>
+                        <td>荷物の重量（kg）</td>
+                        <td>NOT NULL</td>
+                    </tr>
+                    <tr>
+                        <td>cargo_description</td>
+                        <td>TEXT</td>
+                        <td>荷物の説明</td>
+                        <td>NOT NULL</td>
+                    </tr>
+                    <tr>
+                        <td>message</td>
+                        <td>TEXT</td>
+                        <td>要求者からのメッセージ</td>
+                        <td>NULLABLE</td>
+                    </tr>
+                    <tr>
+                        <td>status</td>
+                        <td>ENUM</td>
+                        <td>マッチングの状態</td>
+                        <td>pending | approved | payment_pending | completed | rejected | cancelled</td>
+                    </tr>
+                    <tr>
+                        <td>reject_reason</td>
+                        <td>TEXT</td>
+                        <td>却下理由（拒否時のみ）</td>
+                        <td>NULLABLE</td>
+                    </tr>
+                    <tr>
+                        <td>request_type</td>
+                        <td>ENUM</td>
+                        <td>要求のタイプ</td>
+                        <td>shipper_to_company | company_to_company</td>
+                    </tr>
+                    <tr>
+                        <td>created_at</td>
+                        <td>TIMESTAMP</td>
+                        <td>作成日時</td>
+                        <td>NOT NULL</td>
+                    </tr>
+                    <tr>
+                        <td>updated_at</td>
+                        <td>TIMESTAMP</td>
+                        <td>更新日時</td>
+                        <td>NOT NULL</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>要求タイプ</h3>
+            <ul>
+                <li><strong>shipper_to_company</strong>: 荷主が配送事業者に配送を依頼</li>
+                <li><strong>company_to_company</strong>: 企業が別の企業に配送を依頼</li>
+            </ul>
+        </section>
+
+        <section class="status-flow">
+            <h2>ステータス状態遷移</h2>
+
+            <h3>状態定義</h3>
+            <ul>
+                <li><strong>pending</strong>: 新規作成、承認待ち状態</li>
+                <li><strong>approved</strong>: 配送事業者が承認した状態。決済前</li>
+                <li><strong>payment_pending</strong>: 決済処理中の状態</li>
+                <li><strong>completed</strong>: 決済完了、配送実施完了</li>
+                <li><strong>rejected</strong>: 配送事業者が却下した状態</li>
+                <li><strong>cancelled</strong>: キャンセルされた状態</li>
+            </ul>
+
+            <h3>状態遷移図</h3>
+            <pre class="ascii-diagram">
+┌─────────┐
+│ pending │
+└────┬────┘
+     │
+     ├─→ approved ─→ payment_pending ─→ completed
+     │
+     ├─→ rejected
+     │
+     └─→ cancelled (any state)
+
+【重要】
+- approved から直接 completed への遷移は禁止
+- 必ず payment_pending を経由する必要がある
+- rejected および cancelled は他の状態から到達可能
+            </pre>
+
+            <h3>遷移ルール</h3>
+            <table class="transition-table">
+                <thead>
+                    <tr>
+                        <th>現在の状態</th>
+                        <th>遷移先</th>
+                        <th>条件・イベント</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>pending</td>
+                        <td>approved</td>
+                        <td>配送事業者が承認</td>
+                    </tr>
+                    <tr>
+                        <td>pending</td>
+                        <td>rejected</td>
+                        <td>配送事業者が却下</td>
+                    </tr>
+                    <tr>
+                        <td>pending</td>
+                        <td>cancelled</td>
+                        <td>要求者がキャンセル</td>
+                    </tr>
+                    <tr>
+                        <td>approved</td>
+                        <td>payment_pending</td>
+                        <td>決済フロー開始</td>
+                    </tr>
+                    <tr>
+                        <td>approved</td>
+                        <td>cancelled</td>
+                        <td>いずれかが合意してキャンセル</td>
+                    </tr>
+                    <tr>
+                        <td>payment_pending</td>
+                        <td>completed</td>
+                        <td>決済完了（Stripe webhook）</td>
+                    </tr>
+                    <tr>
+                        <td>payment_pending</td>
+                        <td>cancelled</td>
+                        <td>決済キャンセル</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="matching-logic">
+            <h2>マッチング対象の検索ロジック</h2>
+
+            <h3>検索条件</h3>
+            <p>マッチング対象となるTrip Legは以下の条件を満たす必要があります：</p>
+            <pre class="code-block">
+WHERE
+    cargo_status = 'empty_seeking'
+    AND visibility IN ('public', 'company_only')
+            </pre>
+
+            <h3>フィルター API</h3>
+            <p>マッチング要求時に以下のフィルターが使用可能です：</p>
+            <ul>
+                <li><strong>area</strong>: 配送地域（緯度経度範囲など）</li>
+                <li><strong>date</strong>: 配送予定日</li>
+                <li><strong>vehicle_type</strong>: 車両タイプ（トラック、バン等）</li>
+                <li><strong>available_weight</strong>: 利用可能な容積・重量</li>
+            </ul>
+
+            <h3>承認時の自動処理</h3>
+            <p>マッチングが承認される際、以下が自動実行されます：</p>
+            <ol>
+                <li>ステータスを <code>approved</code> に変更</li>
+                <li>要求者と承認者間のチャットルームを自動作成</li>
+                <li>決済フロー用のPaymentIntentを準備</li>
+            </ol>
+        </section>
+
+        <section class="api-endpoints">
+            <h2>API エンドポイント</h2>
+
+            <div class="endpoint">
+                <h3>マッチング要求を作成</h3>
+                <p class="method">POST /api/v1/matches</p>
+                <p class="description">新しいマッチング要求を作成します。</p>
+
+                <h4>リクエストボディ</h4>
+                <pre class="json-block">
+{
+  "trip_leg_id": "uuid",
+  "requester_id": "uuid",
+  "requester_company_id": "uuid or null",
+  "cargo_weight": 100.5,
+  "cargo_description": "電子機器 1箱",
+  "message": "お忙しいところ恐れ入りますが、この荷物をお送りいただけますでしょうか",
+  "request_type": "shipper_to_company"
+}
+                </pre>
+
+                <h4>レスポンス (201 Created)</h4>
+                <pre class="json-block">
+{
+  "id": "uuid",
+  "trip_leg_id": "uuid",
+  "requester_id": "uuid",
+  "status": "pending",
+  "created_at": "2026-03-20T10:30:00Z",
+  "updated_at": "2026-03-20T10:30:00Z"
+}
+                </pre>
+            </div>
+
+            <div class="endpoint">
+                <h3>マッチング要求を取得</h3>
+                <p class="method">GET /api/v1/matches/:id</p>
+                <p class="description">指定IDのマッチング要求の詳細情報を取得します。</p>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="json-block">
+{
+  "id": "uuid",
+  "trip_leg_id": "uuid",
+  "requester_id": "uuid",
+  "requester_company_id": "uuid or null",
+  "cargo_weight": 100.5,
+  "cargo_description": "電子機器 1箱",
+  "message": "...",
+  "status": "pending",
+  "reject_reason": null,
+  "request_type": "shipper_to_company",
+  "created_at": "2026-03-20T10:30:00Z",
+  "updated_at": "2026-03-20T10:30:00Z"
+}
+                </pre>
+            </div>
+
+            <div class="endpoint">
+                <h3>マッチング要求を承認</h3>
+                <p class="method">PUT /api/v1/matches/:id/approve</p>
+                <p class="description">マッチング要求を承認します。ステータスを pending → approved に変更し、チャットルームを自動作成します。</p>
+
+                <h4>リクエストボディ</h4>
+                <pre class="json-block">
+{
+  "approver_id": "uuid"
+}
+                </pre>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="json-block">
+{
+  "id": "uuid",
+  "status": "approved",
+  "chat_room_id": "uuid",
+  "updated_at": "2026-03-20T10:35:00Z"
+}
+                </pre>
+            </div>
+
+            <div class="endpoint">
+                <h3>マッチング要求を却下</h3>
+                <p class="method">PUT /api/v1/matches/:id/reject</p>
+                <p class="description">マッチング要求を却下します。</p>
+
+                <h4>リクエストボディ</h4>
+                <pre class="json-block">
+{
+  "reason": "容積が不足しています"
+}
+                </pre>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="json-block">
+{
+  "id": "uuid",
+  "status": "rejected",
+  "reject_reason": "容積が不足しています",
+  "updated_at": "2026-03-20T10:35:00Z"
+}
+                </pre>
+            </div>
+
+            <div class="endpoint">
+                <h3>ユーザーのマッチング要求一覧を取得</h3>
+                <p class="method">GET /api/v1/matches?requester_id=:id</p>
+                <p class="description">指定されたユーザーによるマッチング要求の一覧を取得します。</p>
+
+                <h4>クエリパラメータ</h4>
+                <ul>
+                    <li><code>requester_id</code>: フィルター対象のユーザーID</li>
+                    <li><code>status</code> (optional): ステータスでフィルター</li>
+                    <li><code>limit</code> (optional): 取得件数の上限（デフォルト: 20）</li>
+                    <li><code>offset</code> (optional): オフセット（デフォルト: 0）</li>
+                </ul>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="json-block">
+{
+  "items": [
+    {
+      "id": "uuid",
+      "trip_leg_id": "uuid",
+      "status": "pending",
+      "cargo_description": "...",
+      "created_at": "2026-03-20T10:30:00Z"
+    }
+  ],
+  "total": 5,
+  "limit": 20,
+  "offset": 0
+}
+                </pre>
+            </div>
+        </section>
+
+        <section class="data-flow">
+            <h2>データフロー</h2>
+
+            <pre class="ascii-diagram">
+┌─────────────────────────────────────────────────────────────────┐
+│                        ユーザー操作                                 │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                    ① 検索フィルター
+                         │
+                         ▼
+          ┌──────────────────────────────┐
+          │  適合Trip Leg一覧を表示      │
+          │ (cargo_status='empty_seeking')│
+          └────────────┬─────────────────┘
+                       │
+                   ② マッチング要求作成
+                   POST /matches
+                       │
+                       ▼
+          ┌──────────────────────────────┐
+          │  matches table               │
+          │  status: pending             │
+          └────────────┬─────────────────┘
+                       │
+                ③ 配送事業者が確認
+                       │
+        ┌──────────────┴──────────────┐
+        │                             │
+        ▼ 承認                       ▼ 却下
+   ┌────────────┐            ┌─────────────┐
+   │ approved   │            │ rejected    │
+   │ + Chat作成 │            │             │
+   └─────┬──────┘            └─────────────┘
+         │
+      ④ 決済フロー開始
+    POST /payments/create-intent
+         │
+         ▼
+   ┌────────────────┐
+   │ payment_pending│
+   └────────┬───────┘
+            │
+      ⑤ Stripe決済
+            │
+         ▼
+   ┌────────────────┐
+   │ completed      │
+   │ + 配送実施      │
+   └────────────────┘
+            </pre>
+
+            <h3>流れの詳細</h3>
+            <ol>
+                <li><strong>検索</strong>: ユーザーがフィルター条件を指定して空きトリップを検索</li>
+                <li><strong>要求作成</strong>: マッチング要求を作成（ステータス: pending）</li>
+                <li><strong>確認</strong>: 配送事業者がマッチング要求を確認して承認または却下</li>
+                <li><strong>決済開始</strong>: 承認時に决済フロー用のPaymentIntentを作成</li>
+                <li><strong>決済実行</strong>: ユーザーがクレジットカード情報をStripeに送信</li>
+                <li><strong>完了</strong>: Stripe webhookで決済完了を確認し、ステータスを completed に変更</li>
+            </ol>
+        </section>
+
+        <section class="important-notes">
+            <h2>重要な注意点</h2>
+            <ul>
+                <li>
+                    <strong>payment_pendingの必須性</strong>:
+                    approved ステータスから直接 completed に遷移することは禁止されています。
+                    必ず payment_pending を経由して決済フローを完結させる必要があります。
+                </li>
+                <li>
+                    <strong>RequesterCompanyIDの扱い</strong>:
+                    個人の荷主（Shipper）の場合、requester_company_id は NULL となります。
+                    企業間マッチングの場合のみ値が入ります。
+                </li>
+                <li>
+                    <strong>チャットルームの自動作成</strong>:
+                    マッチングが承認される際に、要求者と承認者のチャットルームが自動作成されます。
+                    その後の配送に関するやり取りはこのチャットルームで行われます。
+                </li>
+                <li>
+                    <strong>キャンセル可能性</strong>:
+                    どのステータスからでも cancelled への遷移は可能ですが、
+                    payment_pending 以降のキャンセルには払い戻し処理が発生する場合があります。
+                </li>
+            </ul>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 デリバリープラットフォーム. All rights reserved.</p>
+            <p class="last-updated">最終更新: 2026年3月20日</p>
+        </div>
+    </footer>
+</body>
+</html>
