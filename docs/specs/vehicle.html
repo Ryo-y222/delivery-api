@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配送プラットフォーム - 車両管理仕様</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ヘッダー -->
+    <header class="header">
+        <div class="header-content">
+            <h1>配送プラットフォーム API仕様書</h1>
+            <nav class="nav">
+                <ul>
+                    <li><a href="index.html">ホーム</a></li>
+                    <li><a href="vehicle.html" class="active">車両管理</a></li>
+                    <li><a href="driver.html">ドライバー管理</a></li>
+                    <li><a href="#">その他の仕様</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- ブレッドクラム -->
+    <div class="breadcrumb">
+        <a href="index.html">ホーム</a> / <span>車両管理仕様</span>
+    </div>
+
+    <!-- メインコンテンツ -->
+    <main class="container">
+        <!-- 概要 -->
+        <section class="spec-section">
+            <h2>概要</h2>
+            <p>
+                車両管理モジュールは、配送プラットフォームにおける配送車両の登録・管理・運用を担当します。
+                各配送企業に属する車両の情報を一元管理し、車両の種類・積載量・稼働状態を追跡します。
+            </p>
+            <p>
+                本仕様では、車両テーブルの構造、APIエンドポイント、データベーススキーマ、
+                および実装上の考慮事項について詳細に記載します。
+            </p>
+        </section>
+
+        <!-- データベーススキーマ -->
+        <section class="spec-section">
+            <h2>データベーススキーマ</h2>
+
+            <h3>vehicles テーブル</h3>
+            <p>車両情報を管理するテーブルです。各車両は企業に所属し、一意なナンバープレートで識別されます。</p>
+
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>カラム名</th>
+                        <th>データ型</th>
+                        <th>制約</th>
+                        <th>説明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>id</td>
+                        <td>uint</td>
+                        <td>PRIMARY KEY</td>
+                        <td>車両ID（自動採番）</td>
+                    </tr>
+                    <tr>
+                        <td>company_id</td>
+                        <td>uint</td>
+                        <td>NOT NULL<br>FOREIGN KEY</td>
+                        <td>所属企業ID</td>
+                    </tr>
+                    <tr>
+                        <td>plate_number</td>
+                        <td>varchar(20)</td>
+                        <td>UNIQUE INDEX</td>
+                        <td>ナンバープレート（例：品川12あ34-56）</td>
+                    </tr>
+                    <tr>
+                        <td>vehicle_type</td>
+                        <td>varchar(20)</td>
+                        <td></td>
+                        <td>車両種類（軽トラ、2t、4t、10t、大型）</td>
+                    </tr>
+                    <tr>
+                        <td>max_weight</td>
+                        <td>float64</td>
+                        <td></td>
+                        <td>最大積載量（kg）</td>
+                    </tr>
+                    <tr>
+                        <td>status</td>
+                        <td>varchar(20)</td>
+                        <td></td>
+                        <td>状態（active/maintenance/retired）</td>
+                    </tr>
+                    <tr>
+                        <td>note</td>
+                        <td>text</td>
+                        <td></td>
+                        <td>備考</td>
+                    </tr>
+                    <tr>
+                        <td>created_at</td>
+                        <td>timestamp</td>
+                        <td></td>
+                        <td>作成日時</td>
+                    </tr>
+                    <tr>
+                        <td>updated_at</td>
+                        <td>timestamp</td>
+                        <td></td>
+                        <td>更新日時</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>車両種類（VehicleType）の説明</h3>
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>種類</th>
+                        <th>説明</th>
+                        <th>標準積載量</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>軽トラ</td>
+                        <td>軽トラック。小規模な配送に使用</td>
+                        <td>350-500kg</td>
+                    </tr>
+                    <tr>
+                        <td>2t</td>
+                        <td>2トントラック。中小規模配送に適している</td>
+                        <td>2,000kg</td>
+                    </tr>
+                    <tr>
+                        <td>4t</td>
+                        <td>4トントラック。標準的な中型配送車</td>
+                        <td>4,000kg</td>
+                    </tr>
+                    <tr>
+                        <td>10t</td>
+                        <td>10トントラック。大型配送に対応</td>
+                        <td>10,000kg</td>
+                    </tr>
+                    <tr>
+                        <td>大型</td>
+                        <td>大型トラック（10t以上）。大規模配送に対応</td>
+                        <td>10,000kg以上</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>ステータス（Status）の説明</h3>
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>ステータス</th>
+                        <th>説明</th>
+                        <th>配送可能</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>active</td>
+                        <td>稼働中。配送に使用可能な状態</td>
+                        <td>〇 可能</td>
+                    </tr>
+                    <tr>
+                        <td>maintenance</td>
+                        <td>整備中。一時的に配送に使用不可</td>
+                        <td>× 不可</td>
+                    </tr>
+                    <tr>
+                        <td>retired</td>
+                        <td>廃車。配送に使用不可</td>
+                        <td>× 不可</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- リレーションシップ -->
+        <section class="spec-section">
+            <h2>リレーションシップ</h2>
+            <div class="relationship-diagram">
+                <div class="entity">
+                    <h4>companies</h4>
+                    <p>企業</p>
+                </div>
+                <div class="relationship-arrow">1:N</div>
+                <div class="entity">
+                    <h4>vehicles</h4>
+                    <p>車両</p>
+                </div>
+            </div>
+            <p>
+                <strong>関係性：</strong> 1社の企業は複数の車両を所有することができます。
+                各車両は必ず1つの企業に所属します。
+            </p>
+        </section>
+
+        <!-- API エンドポイント -->
+        <section class="spec-section">
+            <h2>API エンドポイント</h2>
+
+            <h3>1. 車両一覧取得</h3>
+            <div class="endpoint">
+                <div class="method get">GET</div>
+                <div class="path">/api/v1/vehicles</div>
+            </div>
+            <p><strong>説明：</strong> 企業に属する車両一覧を取得します。</p>
+            <p><strong>クエリパラメータ：</strong></p>
+            <ul>
+                <li><code>company_id</code> (uint, required): 企業ID</li>
+                <li><code>status</code> (string, optional): フィルタリング用ステータス</li>
+                <li><code>page</code> (int, optional): ページ番号</li>
+                <li><code>limit</code> (int, optional): 1ページあたりの件数</li>
+            </ul>
+
+            <div class="code-block">
+                <p class="code-label">リクエスト例：</p>
+                <pre><code>GET /api/v1/vehicles?company_id=1&status=active&page=1&limit=20</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": [
+    {
+      "id": 1,
+      "company_id": 1,
+      "plate_number": "品川12あ34-56",
+      "vehicle_type": "4t",
+      "max_weight": 4000,
+      "status": "active",
+      "note": "メイン配送用",
+      "created_at": "2026-01-15T09:30:00Z",
+      "updated_at": "2026-03-20T14:22:00Z"
+    },
+    {
+      "id": 2,
+      "company_id": 1,
+      "plate_number": "品川13い45-67",
+      "vehicle_type": "2t",
+      "max_weight": 2000,
+      "status": "active",
+      "note": "小規模配送用",
+      "created_at": "2026-02-10T10:15:00Z",
+      "updated_at": "2026-03-20T14:22:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 2,
+    "total_pages": 1
+  }
+}</code></pre>
+            </div>
+
+            <h3>2. 車両詳細取得</h3>
+            <div class="endpoint">
+                <div class="method get">GET</div>
+                <div class="path">/api/v1/vehicles/:id</div>
+            </div>
+            <p><strong>説明：</strong> 指定したIDの車両詳細情報を取得します。</p>
+
+            <div class="code-block">
+                <p class="code-label">リクエスト例：</p>
+                <pre><code>GET /api/v1/vehicles/1</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": {
+    "id": 1,
+    "company_id": 1,
+    "plate_number": "品川12あ34-56",
+    "vehicle_type": "4t",
+    "max_weight": 4000,
+    "status": "active",
+    "note": "メイン配送用",
+    "created_at": "2026-01-15T09:30:00Z",
+    "updated_at": "2026-03-20T14:22:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h3>3. 車両作成</h3>
+            <div class="endpoint">
+                <div class="method post">POST</div>
+                <div class="path">/api/v1/vehicles</div>
+            </div>
+            <p><strong>説明：</strong> 新しい車両を登録します。</p>
+
+            <div class="code-block">
+                <p class="code-label">リクエストボディ例：</p>
+                <pre><code>{
+  "company_id": 1,
+  "plate_number": "品川14う56-78",
+  "vehicle_type": "10t",
+  "max_weight": 10000,
+  "status": "active",
+  "note": "新規購入"
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（201 Created）：</p>
+                <pre><code>{
+  "data": {
+    "id": 3,
+    "company_id": 1,
+    "plate_number": "品川14う56-78",
+    "vehicle_type": "10t",
+    "max_weight": 10000,
+    "status": "active",
+    "note": "新規購入",
+    "created_at": "2026-03-20T15:00:00Z",
+    "updated_at": "2026-03-20T15:00:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h3>4. 車両更新</h3>
+            <div class="endpoint">
+                <div class="method put">PUT</div>
+                <div class="path">/api/v1/vehicles/:id</div>
+            </div>
+            <p><strong>説明：</strong> 車両情報を更新します。</p>
+
+            <div class="code-block">
+                <p class="code-label">リクエストボディ例：</p>
+                <pre><code>{
+  "status": "maintenance",
+  "note": "エンジン整備予定"
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": {
+    "id": 1,
+    "company_id": 1,
+    "plate_number": "品川12あ34-56",
+    "vehicle_type": "4t",
+    "max_weight": 4000,
+    "status": "maintenance",
+    "note": "エンジン整備予定",
+    "created_at": "2026-01-15T09:30:00Z",
+    "updated_at": "2026-03-20T15:05:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h3>5. 車両削除</h3>
+            <div class="endpoint">
+                <div class="method delete">DELETE</div>
+                <div class="path">/api/v1/vehicles/:id</div>
+            </div>
+            <p><strong>説明：</strong> 車両を削除します。</p>
+
+            <div class="code-block">
+                <p class="code-label">リクエスト例：</p>
+                <pre><code>DELETE /api/v1/vehicles/3</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（204 No Content）：</p>
+                <pre><code>（レスポンスボディなし）</code></pre>
+            </div>
+        </section>
+
+        <!-- 実装上の考慮事項 -->
+        <section class="spec-section">
+            <h2>実装上の考慮事項</h2>
+
+            <h3>ナンバープレートのUNIQUE INDEXについて</h3>
+            <p>
+                <code>plate_number</code> カラムに UNIQUE INDEX が設定されている理由：
+            </p>
+            <ul>
+                <li>
+                    <strong>現実世界の一意性：</strong>
+                    ナンバープレートは日本の法令により一意であり、重複は存在しません。
+                    この特性をデータベースレベルで保証することで、データ整合性を確保します。
+                </li>
+                <li>
+                    <strong>配送管理の信頼性：</strong>
+                    配送時の車両追跡・識別において、ナンバープレートは重要な識別子です。
+                    一意性を保証することで、誤った車両の登録を防ぎます。
+                </li>
+                <li>
+                    <strong>クエリ性能：</strong>
+                    UNIQUE INDEX はクエリのパフォーマンス向上にも貢献します。
+                    ナンバープレートによる検索が頻繁に発生する場合、インデックスは検索を高速化します。
+                </li>
+                <li>
+                    <strong>アプリケーションロジック削減：</strong>
+                    UNIQUE INDEX がない場合、アプリケーション側で重複チェックを実装する必要があります。
+                    これはコードの複雑性と保守負荷を増加させます。
+                </li>
+            </ul>
+
+            <h3>企業への属性付け</h3>
+            <p>
+                <code>company_id</code> は NOT NULL 制約を持ちます。
+                これにより、所有企業を持たない「孤立した」車両の存在を防ぎます。
+                マルチテナント環境において、データ隔離と権限管理を実現します。
+            </p>
+
+            <h3>ステータス管理</h3>
+            <p>
+                車両のステータスは論理削除ではなく、ステータスカラムで管理されます。
+                これにより、廃車となった車両の履歴を保持しながら、
+                システムから効果的に除外することができます。
+            </p>
+        </section>
+
+        <!-- エラーレスポンス -->
+        <section class="spec-section">
+            <h2>エラーレスポンス</h2>
+
+            <div class="code-block">
+                <p class="code-label">400 Bad Request：</p>
+                <pre><code>{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "リクエストパラメータが不正です"
+  }
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">409 Conflict：</p>
+                <pre><code>{
+  "error": {
+    "code": "DUPLICATE_PLATE_NUMBER",
+    "message": "このナンバープレートは既に登録されています"
+  }
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">404 Not Found：</p>
+                <pre><code>{
+  "error": {
+    "code": "VEHICLE_NOT_FOUND",
+    "message": "指定された車両が見つかりません"
+  }
+}</code></pre>
+            </div>
+        </section>
+    </main>
+
+    <!-- フッター -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>&copy; 2026 配送プラットフォーム。All rights reserved.</p>
+            <p>最終更新：2026-03-20</p>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>サブスクリプション - delivery-api 仕様書</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>delivery-api 仕様書</h1>
+      <nav>
+        <a href="index.html">← インデックスへ</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">ホーム</a> / <span>サブスクリプション仕様</span>
+    </div>
+
+    <!-- Overview -->
+    <h2>サブスクリプション機能 (Subscription & Billing)</h2>
+    <div class="card">
+      <h3>概要</h3>
+      <p>delivery-api のマネタイズの核となるサブスクリプション機能です。Stripe Billing を連携し、運送会社は3つのプランの中から選択できます。free プランは初期ユーザー向けの制限機能、standard/premium は月額課金で機能解放。</p>
+      <p style="margin-top: 1rem;"><strong>主な特徴:</strong></p>
+      <ul>
+        <li>3プラン: free / standard / premium</li>
+        <li>Stripe Billing との完全統合</li>
+        <li>月額自動課金（月1回）</li>
+        <li>free プランの月間マッチング数制限（3件/月）</li>
+        <li>支払い失敗時の <code>past_due</code> 状態</li>
+        <li>Webhook による自動更新</li>
+      </ul>
+    </div>
+
+    <!-- Plan Comparison -->
+    <h2>料金プラン比較表</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>機能</th>
+            <th>Free</th>
+            <th>Standard</th>
+            <th>Premium</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>月額料金</strong></td>
+            <td>¥0</td>
+            <td>¥9,800</td>
+            <td>¥29,800</td>
+          </tr>
+          <tr>
+            <td><strong>対応モード</strong></td>
+            <td>ソロモードのみ</td>
+            <td>ソロ + マルチ</td>
+            <td>ソロ + マルチ</td>
+          </tr>
+          <tr>
+            <td><strong>月間マッチング数</strong></td>
+            <td>3件/月</td>
+            <td>無制限</td>
+            <td>無制限</td>
+          </tr>
+          <tr>
+            <td><strong>チャット機能</strong></td>
+            <td>✕</td>
+            <td>✓</td>
+            <td>✓</td>
+          </tr>
+          <tr>
+            <td><strong>決済機能</strong></td>
+            <td>✕</td>
+            <td>✓</td>
+            <td>✓</td>
+          </tr>
+          <tr>
+            <td><strong>API アクセス</strong></td>
+            <td>✕</td>
+            <td>✕</td>
+            <td>✓</td>
+          </tr>
+          <tr>
+            <td><strong>優先表示</strong></td>
+            <td>✕</td>
+            <td>✕</td>
+            <td>✓</td>
+          </tr>
+          <tr>
+            <td><strong>サポート</strong></td>
+            <td>メール</td>
+            <td>メール + チャット</td>
+            <td>優先・電話対応</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Plan Details -->
+    <h2>各プランの詳細</h2>
+
+    <div class="card">
+      <h3>Free プラン</h3>
+      <ul>
+        <li><strong>対象:</strong> スタートアップ企業、試験導入企業</li>
+        <li><strong>月額:</strong> ¥0</li>
+        <li><strong>マッチング制限:</strong> 月3件（超過するとマッチングリクエストを受け付けない）</li>
+        <li><strong>対応モード:</strong> ソロモードのみ</li>
+        <li><strong>機能制限:</strong> チャット、決済、API は利用不可</li>
+        <li><strong>使用例:</strong> 自社の配車計画（dispatch_plan）を作成して、配車ボードを使う。マルチモードへのアップグレードを促す</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>Standard プラン</h3>
+      <ul>
+        <li><strong>対象:</strong> 中小運送会社、月単位で安定した案件がある企業</li>
+        <li><strong>月額:</strong> ¥9,800</li>
+        <li><strong>マッチング:</strong> 無制限</li>
+        <li><strong>対応モード:</strong> ソロ + マルチ（マッチング市場へのアクセス）</li>
+        <li><strong>機能:</strong> チャット、決済、レビュー等の全基本機能</li>
+        <li><strong>優先度:</strong> 通常表示（premium 企業よりも下）</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>Premium プラン</h3>
+      <ul>
+        <li><strong>対象:</strong> 大規模運送会社、API 連携が必要な企業</li>
+        <li><strong>月額:</strong> ¥29,800</li>
+        <li><strong>マッチング:</strong> 無制限</li>
+        <li><strong>対応モード:</strong> ソロ + マルチ + API</li>
+        <li><strong>機能:</strong>
+          <ul>
+            <li>全基本機能</li>
+            <li>REST API による自動連携（配車計画の自動作成等）</li>
+            <li>マッチング検索時の「優先表示」（検索結果の上位に表示）</li>
+            <li>高度な analytics & レポート</li>
+            <li>優先カスタマーサポート</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+
+    <!-- DB Schema -->
+    <h2>データベーススキーマ</h2>
+
+    <div class="card">
+      <h3>subscriptions テーブル</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>制約</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>サブスクリプションID</td>
+            <td>PRIMARY KEY, AUTO_INCREMENT</td>
+          </tr>
+          <tr>
+            <td><code>company_id</code></td>
+            <td>uint (FK)</td>
+            <td>会社ID</td>
+            <td>FOREIGN KEY to companies, UNIQUE</td>
+          </tr>
+          <tr>
+            <td><code>plan</code></td>
+            <td>enum</td>
+            <td>プラン種別</td>
+            <td>free / standard / premium</td>
+          </tr>
+          <tr>
+            <td><code>stripe_subscription_id</code></td>
+            <td>varchar(255)</td>
+            <td>Stripe Subscription ID</td>
+            <td>NULL（free プランの場合）。standard/premium では NOT NULL</td>
+          </tr>
+          <tr>
+            <td><code>stripe_customer_id</code></td>
+            <td>varchar(255)</td>
+            <td>Stripe Customer ID</td>
+            <td>NOT NULL（全プラン）。Billing Portal アクセスに使用</td>
+          </tr>
+          <tr>
+            <td><code>status</code></td>
+            <td>enum</td>
+            <td>サブスクリプション状態</td>
+            <td>active / cancelled / past_due</td>
+          </tr>
+          <tr>
+            <td><code>current_period_start</code></td>
+            <td>timestamp</td>
+            <td>現在の請求期間開始日</td>
+            <td>月ごとの料金制限チェックに使用</td>
+          </tr>
+          <tr>
+            <td><code>current_period_end</code></td>
+            <td>timestamp</td>
+            <td>現在の請求期間終了日</td>
+            <td>月ごとの料金制限チェックに使用</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>timestamp</td>
+            <td>作成日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP</td>
+          </tr>
+          <tr>
+            <td><code>updated_at</code></td>
+            <td>timestamp</td>
+            <td>更新日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Free Plan Limit -->
+    <h2>Free プランのマッチング数制限</h2>
+    <div class="card">
+      <h3>制限の仕組み</h3>
+      <p><code>current_period_start</code> から <code>current_period_end</code> の期間内に、そのユーザーが作成したマッチング数（status = pending/approved 以上）をカウント。</p>
+
+      <h3>チェック箇所</h3>
+      <p>マッチングリクエスト作成時（POST /api/v1/matches）に以下をバリデーション:</p>
+      <ol>
+        <li>subscription.plan = "free" か確認</li>
+        <li>この月のマッチング数 ≥ 3 か確認</li>
+        <li>YES → 422 Unprocessable Entity 返却、マッチングリクエスト作成不可</li>
+        <li>NO → マッチング作成処理を続行</li>
+      </ol>
+
+      <h3>SQL 例</h3>
+      <pre><code>SELECT COUNT(*) as match_count
+FROM matches
+WHERE requester_company_id = ?
+  AND created_at >= ?  -- current_period_start
+  AND created_at < ?   -- current_period_end
+  AND status != 'rejected'</code></pre>
+
+      <h3>月初め処理</h3>
+      <p>Stripe Webhook <code>customer.subscription.updated</code> で <code>current_period_start</code> / <code>current_period_end</code> が更新される。マッチング制限カウンターは自動的にリセット。</p>
+    </div>
+
+    <!-- Stripe Integration Flow -->
+    <h2>Stripe Billing 連携フロー</h2>
+    <div class="flow">
+      <pre>
+1. ユーザーが「プラン選択」画面で plan を選択
+         ↓
+2. [Free 選択の場合]
+   - subscription.plan = "free"
+   - stripe_subscription_id = NULL
+   - status = "active"
+   - そのまま完了
+         ↓
+3. [Standard/Premium 選択の場合]
+   - Stripe Checkout Session 作成
+   - client_reference_id = company_id (追跡用)
+   - success_url = https://app/subscription/success
+   - cancel_url = https://app/subscription
+         ↓
+4. クライアントを Stripe Hosted Checkout へリダイレクト
+         ↓
+5. ユーザーがカード情報を入力 → 確認
+         ↓
+6. Stripe がカード処理実行
+         ↓
+7. Webhook: checkout.session.completed
+   - Stripe Customer / Subscription 作成
+   - DB に stripe_subscription_id を保存
+         ↓
+8. Webhook: invoice.paid
+   - subscription.status = "active"
+   - subscription.current_period_start/end を更新
+   - DB コミット
+         ↓
+9. クライアント側で /subscription/success にリダイレクト
+   - ユーザーに「アップグレード完了」を表示
+      </pre>
+    </div>
+
+    <!-- API Endpoints -->
+    <h2>API エンドポイント</h2>
+
+    <div class="endpoint">
+      <span class="method method-post">POST</span>
+      <span class="path">/api/v1/subscriptions/checkout</span>
+      <div class="desc">Stripe Checkout Session を作成（standard/premium プラン）</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>リクエスト例</h4>
+      <pre><code>{
+  "plan": "standard"
+}</code></pre>
+
+      <h4>レスポンス例</h4>
+      <pre><code>{
+  "session_id": "cs_test_a1234567890123456789",
+  "checkout_url": "https://checkout.stripe.com/pay/cs_test_a1234567890123456789"
+}</code></pre>
+
+      <h4>ステータスコード</h4>
+      <ul>
+        <li><code>200 OK</code> - Checkout Session 作成成功</li>
+        <li><code>400 Bad Request</code> - plan パラメータなし</li>
+        <li><code>422 Unprocessable Entity</code> - 既に有料プランを利用中</li>
+      </ul>
+    </div>
+
+    <div class="endpoint">
+      <span class="method method-get">GET</span>
+      <span class="path">/api/v1/subscriptions/current</span>
+      <div class="desc">現在のサブスクリプション情報を取得</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>レスポンス例</h4>
+      <pre><code>{
+  "id": 100,
+  "company_id": 50,
+  "plan": "standard",
+  "status": "active",
+  "current_period_start": "2026-03-01T00:00:00Z",
+  "current_period_end": "2026-03-31T23:59:59Z",
+  "created_at": "2026-02-15T10:00:00Z",
+  "updated_at": "2026-03-01T00:00:00Z",
+  "billing_portal_url": "https://billing.stripe.com/..."
+}</code></pre>
+    </div>
+
+    <div class="endpoint">
+      <span class="method method-post">POST</span>
+      <span class="path">/api/v1/subscriptions/cancel</span>
+      <div class="desc">サブスクリプションをキャンセル（free プランへダウングレード）</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>リクエスト例</h4>
+      <pre><code>{
+  "reason": "ビジネス休止中"  // オプション（カスタマーサポート用）
+}</code></pre>
+
+      <h4>レスポンス例</h4>
+      <pre><code>{
+  "id": 100,
+  "plan": "free",
+  "status": "cancelled",
+  "cancelled_at": "2026-03-20T12:00:00Z"
+}</code></pre>
+    </div>
+
+    <div class="endpoint">
+      <span class="method method-post">POST</span>
+      <span class="path">/api/v1/webhooks/stripe</span>
+      <div class="desc">Stripe Webhook エンドポイント（invoice.paid, customer.subscription.updated）</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>処理対象イベント</h4>
+      <ul>
+        <li><strong>invoice.paid</strong> - 請求成功時。subscription.status = "active"</li>
+        <li><strong>customer.subscription.updated</strong> - サブスク更新（period 変更等）</li>
+        <li><strong>customer.subscription.deleted</strong> - キャンセル時。subscription.status = "cancelled"</li>
+        <li><strong>invoice.payment_failed</strong> - 支払い失敗時。subscription.status = "past_due"</li>
+      </ul>
+
+      <h4>Webhook シグネチャ検証</h4>
+      <pre><code>// Go 例
+sig := r.Header.Get("Stripe-Signature")
+event, err := webhook.ConstructEvent(body, sig, endpointSecret)
+// 検証失敗時は 400 Bad Request</code></pre>
+    </div>
+
+    <!-- Subscription States -->
+    <h2>サブスクリプションステート図</h2>
+    <div class="flow">
+      <pre>
+[Free プラン]
+   │
+   ├─→ ユーザーが Standard/Premium 選択
+   │
+   └─→ [Checkout Session 作成]
+          │
+          ├─→ [キャンセル] → [Free プランへ戻る]
+          │
+          └─→ [カード処理] → [invoice.paid Webhook]
+                        │
+                        └─→ [Active]
+                             │
+                             ├─→ [支払い失敗] → [past_due]
+                             │                   │
+                             │                   └─→ [再試行成功] → [Active]
+                             │
+                             └─→ [ユーザーキャンセル] → [Cancelled]
+      </pre>
+    </div>
+
+    <!-- past_due State -->
+    <h2>past_due 状態の処理</h2>
+    <div class="card">
+      <h3>発生条件</h3>
+      <p>毎月の自動課金時にカード決済に失敗した場合。</p>
+
+      <h3>期間</h3>
+      <p>Stripe のデフォルト: 最大 3 回自動リトライ。その後 30 日間 past_due 状態が続く。</p>
+
+      <h3>ユーザーへの影響</h3>
+      <ul>
+        <li><strong>マッチング機能:</strong> マッチングリクエスト送信不可。既存マッチングの完了までは利用可</li>
+        <li><strong>UI 通知:</strong> ダッシュボードに「支払い方法を更新してください」というバナーを表示</li>
+        <li><strong>支払い方法更新:</strong> Stripe Billing Portal から再入力可能</li>
+      </ul>
+
+      <h3>API 側の処理</h3>
+      <p>マッチングリクエスト作成時に以下をチェック:</p>
+      <pre><code>subscription.status == "past_due" → 422 Unprocessable Entity
+{
+  "error": "支払い情報が不足しています。Billing Portal で更新してください。",
+  "billing_portal_url": "https://billing.stripe.com/..."
+}</code></pre>
+    </div>
+
+    <!-- Downgrade Logic -->
+    <h2>ダウングレード時の動作</h2>
+    <div class="card">
+      <h3>Standard/Premium → Free へのダウングレード</h3>
+      <ol>
+        <li>ユーザーが /subscriptions/cancel を呼び出し</li>
+        <li>Stripe Subscription をキャンセル（現在の period_end で終了）</li>
+        <li>DB に Webhook が返ってきた時点で:
+          <ul>
+            <li>subscription.plan = "free"</li>
+            <li>subscription.status = "cancelled"</li>
+            <li>subscription.stripe_subscription_id = NULL</li>
+            <li>subscription.current_period_start = 今月初日</li>
+            <li>subscription.current_period_end = 来月初日 - 1 日</li>
+          </ul>
+        </li>
+        <li>次の月初めから月3件制限が適用される</li>
+      </ol>
+
+      <h3>注意点</h3>
+      <p>Stripe の仕様上、キャンセル後も <code>current_period_end</code> まで access が続く場合がある。その期間は standard/premium 機能にアクセス可能。</p>
+    </div>
+
+    <!-- Implementation Checklist -->
+    <h2>実装チェックリスト</h2>
+    <div class="card">
+      <ul>
+        <li>☐ subscriptions テーブル作成（マイグレーション）</li>
+        <li>☐ Stripe API キー設定（環境変数）</li>
+        <li>☐ Checkout Session 作成エンドポイント実装</li>
+        <li>☐ Webhook ハンドラー実装（invoice.paid, customer.subscription.updated など）</li>
+        <li>☐ Webhook シグネチャ検証</li>
+        <li>☐ Free プランのマッチング数制限バリデーション</li>
+        <li>☐ past_due 状態でのマッチング制限</li>
+        <li>☐ Billing Portal URL の取得・提供</li>
+        <li>☐ E2E テスト（Stripe Test Mode 使用）</li>
+        <li>☐ ドキュメント作成（顧客向け・開発者向け）</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Delivery Platform Feature Specs — Last updated: 2026-03-20</p>
+  </footer>
+</body>
+</html>

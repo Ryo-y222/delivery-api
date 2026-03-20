@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企業管理機能 - 配送プラットフォーム仕様書</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 0;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        header h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+        nav {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+        nav a {
+            color: rgba(255,255,255,0.9);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+        nav a:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        .breadcrumb {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.8);
+            margin-top: 0.5rem;
+        }
+        .breadcrumb a {
+            color: rgba(255,255,255,0.9);
+            text-decoration: none;
+        }
+        main {
+            padding: 2rem;
+        }
+        section {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        section:last-child {
+            border-bottom: none;
+        }
+        h2 {
+            font-size: 1.8rem;
+            color: #667eea;
+            margin: 0 0 1rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid #667eea;
+            display: inline-block;
+        }
+        h3 {
+            font-size: 1.3rem;
+            color: #764ba2;
+            margin: 1.5rem 0 1rem 0;
+        }
+        h4 {
+            font-size: 1.1rem;
+            color: #555;
+            margin: 1rem 0 0.5rem 0;
+        }
+        .overview-box {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 1.5rem 0;
+        }
+        .overview-box h3 {
+            margin-top: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+        }
+        table th {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+        }
+        table td {
+            padding: 1rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        table tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        table tr:hover {
+            background: #f0f4ff;
+        }
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        .api-endpoint {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-weight: 600;
+        }
+        .method-get {
+            color: #1976d2;
+        }
+        .method-post {
+            color: #388e3c;
+        }
+        .method-put {
+            color: #f57c00;
+        }
+        .method-delete {
+            color: #d32f2f;
+        }
+        .disclosure-stage {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+        .diagram {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            padding: 2rem;
+            margin: 2rem 0;
+            border-radius: 4px;
+            text-align: center;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+        .business-rule {
+            background: #ffe0e0;
+            border-left: 4px solid #d32f2f;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+        .business-rule strong {
+            color: #b71c1c;
+        }
+        footer {
+            background: #f5f5f5;
+            border-top: 1px solid #e0e0e0;
+            padding: 2rem;
+            margin-top: 2rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+        .badge-required {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .badge-optional {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        .badge-info {
+            background: #f3e5f5;
+            color: #6a1b9a;
+        }
+        .parameter-table {
+            font-size: 0.9rem;
+        }
+        .parameter-table td:first-child {
+            font-family: monospace;
+            font-weight: 600;
+            color: #667eea;
+        }
+        .section-toc {
+            background: #eceff1;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 2rem 0;
+        }
+        .section-toc ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .section-toc li {
+            padding: 0.5rem 0;
+        }
+        .section-toc a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .section-toc a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>企業管理機能 仕様書</h1>
+            <nav>
+                <a href="#">ホーム</a>
+                <a href="#">API仕様</a>
+                <a href="#">データベース</a>
+                <a href="#">ビジネスルール</a>
+            </nav>
+            <div class="breadcrumb">
+                配送プラットフォーム / 仕様書 / 企業管理
+            </div>
+        </header>
+
+        <main>
+            <!-- 目次 -->
+            <section class="section-toc">
+                <h3>目次</h3>
+                <ul>
+                    <li><a href="#overview">1. 概要</a></li>
+                    <li><a href="#schema">2. データベーススキーマ</a></li>
+                    <li><a href="#disclosure">3. 情報開示ステージ</a></li>
+                    <li><a href="#api">4. API エンドポイント</a></li>
+                    <li><a href="#relationship">5. 関連図</a></li>
+                    <li><a href="#business-rules">6. ビジネスルール</a></li>
+                </ul>
+            </section>
+
+            <!-- セクション1: 概要 -->
+            <section id="overview">
+                <h2>1. 概要</h2>
+                <p>
+                    企業管理機能は、配送プラットフォームに登録された配送企業（配送業者）の情報を一元管理します。
+                    このシステムの主要な特徴は、段階的な情報開示により、不正利用やシステム悪用を防止することです。
+                </p>
+
+                <h3>情報開示の2段階制度</h3>
+                <div class="overview-box">
+                    <h4>なぜ DisplayName と Name を分けるのか</h4>
+                    <p>
+                        <strong>セキュリティ上の理由：</strong>
+                    </p>
+                    <ul>
+                        <li><strong>直接接触の防止：</strong> 検索段階では企業の匿名名（DisplayName）のみを表示し、本当の企業名（Name）は隠す</li>
+                        <li><strong>システムタダ乗りの防止：</strong> マッチング承認前に実名を明かすと、ユーザーがシステムを経由せず直接連絡する可能性がある</li>
+                        <li><strong>支払いベースの開示：</strong> 支払い完了後のみ、電話番号やメールアドレスなどの詳細情報を提供</li>
+                    </ul>
+                </div>
+
+                <h3>開示ステージの流れ</h3>
+                <ul>
+                    <li><strong>段階1（検索）：</strong> DisplayName（匿名名）のみ表示</li>
+                    <li><strong>段階2（承認）：</strong> マッチング承認後に Name（実名）を表示</li>
+                    <li><strong>段階3（支払い）：</strong> 支払い完了後に Phone、Address、Email を表示</li>
+                </ul>
+            </section>
+
+            <!-- セクション2: データベーススキーマ -->
+            <section id="schema">
+                <h2>2. データベーススキーマ</h2>
+                <p>companies テーブルは、配送企業の全ての情報を保持します。</p>
+
+                <h3>テーブル構造</h3>
+                <table class="parameter-table">
+                    <thead>
+                        <tr>
+                            <th>カラム名</th>
+                            <th>型</th>
+                            <th>制約</th>
+                            <th>説明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>id</td>
+                            <td>UUID / BIGINT</td>
+                            <td>PRIMARY KEY</td>
+                            <td>企業の一意なID。システム内部で使用</td>
+                        </tr>
+                        <tr>
+                            <td>name</td>
+                            <td>VARCHAR(255)</td>
+                            <td>NOT NULL, UNIQUE</td>
+                            <td>企業の実名。支払い後のみ表示。ユーザーテーブルの company_id で参照</td>
+                        </tr>
+                        <tr>
+                            <td>display_name</td>
+                            <td>VARCHAR(255)</td>
+                            <td>NOT NULL</td>
+                            <td>企業の匿名名（表示名）。検索結果に使用。直接連絡を防ぐ</td>
+                        </tr>
+                        <tr>
+                            <td>address</td>
+                            <td>TEXT</td>
+                            <td>NULLABLE</td>
+                            <td>企業の住所。支払い後のみ表示</td>
+                        </tr>
+                        <tr>
+                            <td>headquarters_lat</td>
+                            <td>DECIMAL(10, 8)</td>
+                            <td>NULLABLE</td>
+                            <td>本社所在地の緯度。配送計画や地理情報クエリに使用</td>
+                        </tr>
+                        <tr>
+                            <td>headquarters_lng</td>
+                            <td>DECIMAL(11, 8)</td>
+                            <td>NULLABLE</td>
+                            <td>本社所在地の経度。配送計画や地理情報クエリに使用</td>
+                        </tr>
+                        <tr>
+                            <td>phone</td>
+                            <td>VARCHAR(20)</td>
+                            <td>NULLABLE</td>
+                            <td>企業の電話番号。支払い後のみ表示。フォーマット: +81-XX-XXXX-XXXX</td>
+                        </tr>
+                        <tr>
+                            <td>email</td>
+                            <td>VARCHAR(255)</td>
+                            <td>NULLABLE</td>
+                            <td>企業のメールアドレス。支払い後のみ表示</td>
+                        </tr>
+                        <tr>
+                            <td>logo_url</td>
+                            <td>VARCHAR(500)</td>
+                            <td>NULLABLE</td>
+                            <td>企業ロゴの URL。検索結果に表示可能</td>
+                        </tr>
+                        <tr>
+                            <td>rating_avg</td>
+                            <td>DECIMAL(2, 1)</td>
+                            <td>DEFAULT 0</td>
+                            <td>平均レーティング。1.0 ～ 5.0 の範囲。検索結果のソート機準</td>
+                        </tr>
+                        <tr>
+                            <td>total_deals</td>
+                            <td>INT</td>
+                            <td>DEFAULT 0</td>
+                            <td>完了した配送案件の総数。信用スコアの指標</td>
+                        </tr>
+                        <tr>
+                            <td>plan</td>
+                            <td>ENUM('free', 'standard', 'premium')</td>
+                            <td>DEFAULT 'free'</td>
+                            <td>企業のサブスクリプションプラン。機能制限と API クォーターの根拠</td>
+                        </tr>
+                        <tr>
+                            <td>created_at</td>
+                            <td>TIMESTAMP</td>
+                            <td>NOT NULL, DEFAULT CURRENT_TIMESTAMP</td>
+                            <td>企業レコードの作成日時</td>
+                        </tr>
+                        <tr>
+                            <td>updated_at</td>
+                            <td>TIMESTAMP</td>
+                            <td>NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP</td>
+                            <td>企業レコードの最終更新日時</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>インデックス</h3>
+                <pre class="code-block">-- 企業検索の高速化
+CREATE INDEX idx_display_name ON companies(display_name);
+
+-- レーティングでのソート
+CREATE INDEX idx_rating_avg ON companies(rating_avg DESC);
+
+-- 実名検索（管理画面）
+CREATE INDEX idx_name ON companies(name);
+
+-- ユーザーテーブルでの参照整合性
+CREATE INDEX idx_name_for_fk ON companies(name);
+
+-- 地理情報クエリ
+CREATE SPATIAL INDEX idx_headquarters ON companies(headquarters_lat, headquarters_lng);</pre>
+            </section>
+
+            <!-- セクション3: 情報開示ステージ -->
+            <section id="disclosure">
+                <h2>3. 情報開示ステージ</h2>
+                <p>
+                    ユーザーが企業情報を取得するにあたり、段階的に開示される情報が異なります。
+                    以下の表は、各ステージでどの情報が見えるかを示します。
+                </p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>情報項目</th>
+                            <th>段階1: 検索</th>
+                            <th>段階2: マッチング承認</th>
+                            <th>段階3: 支払い完了</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>id</strong></td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>display_name</strong></td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>logo_url</strong></td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>rating_avg</strong></td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>total_deals</strong></td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>name</strong></td>
+                            <td>✗ 非表示</td>
+                            <td>✓ 表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>phone</strong></td>
+                            <td>✗ 非表示</td>
+                            <td>✗ 非表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>email</strong></td>
+                            <td>✗ 非表示</td>
+                            <td>✗ 非表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>address</strong></td>
+                            <td>✗ 非表示</td>
+                            <td>✗ 非表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                        <tr>
+                            <td><strong>headquarters_lat / lng</strong></td>
+                            <td>✗ 非表示</td>
+                            <td>✗ 非表示</td>
+                            <td>✓ 表示</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>実装指針</h3>
+                <div class="disclosure-stage">
+                    <h4>API レスポンスのフィルタリング</h4>
+                    <p>
+                        各エンドポイントの実装では、リクエストユーザーのマッチング承認ステータスと支払いステータスに基づいて、
+                        レスポンスから該当フィールドを除外する必要があります。
+                    </p>
+                    <pre class="code-block">// 疑似コード
+function filterCompanyResponse(company, userStatus) {
+    const result = {
+        id: company.id,
+        display_name: company.display_name,
+        logo_url: company.logo_url,
+        rating_avg: company.rating_avg,
+        total_deals: company.total_deals
+    };
+
+    if (userStatus.isMatchingApproved) {
+        result.name = company.name;
+    }
+
+    if (userStatus.isPaymentComplete) {
+        result.phone = company.phone;
+        result.email = company.email;
+        result.address = company.address;
+        result.headquarters_lat = company.headquarters_lat;
+        result.headquarters_lng = company.headquarters_lng;
+    }
+
+    return result;
+}</pre>
+                </div>
+            </section>
+
+            <!-- セクション4: API エンドポイント -->
+            <section id="api">
+                <h2>4. API エンドポイント</h2>
+
+                <h3>エンドポイント一覧</h3>
+                <ul>
+                    <li>POST /api/v1/companies - 企業を作成</li>
+                    <li>GET /api/v1/companies/:id - 企業情報を取得</li>
+                    <li>GET /api/v1/companies/search - 企業を検索</li>
+                    <li>PUT /api/v1/companies/:id - 企業情報を更新</li>
+                </ul>
+
+                <!-- エンドポイント1 -->
+                <h3>1. 企業を作成</h3>
+                <div class="api-endpoint">
+                    <span class="method-post">POST</span> /api/v1/companies
+                </div>
+                <p>新しい企業をシステムに登録します。企業の実名と匿名名の両方を設定します。</p>
+
+                <h4>リクエスト</h4>
+                <table class="parameter-table">
+                    <thead>
+                        <tr>
+                            <th>パラメータ</th>
+                            <th>型</th>
+                            <th>制約</th>
+                            <th>説明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>name</td>
+                            <td>string</td>
+                            <td><span class="badge badge-required">必須</span></td>
+                            <td>企業の実名（一意）。1～255文字</td>
+                        </tr>
+                        <tr>
+                            <td>display_name</td>
+                            <td>string</td>
+                            <td><span class="badge badge-required">必須</span></td>
+                            <td>企業の匿名表示名。1～255文字。複数の企業が同じ display_name を持つ可能</td>
+                        </tr>
+                        <tr>
+                            <td>address</td>
+                            <td>string</td>
+                            <td><span class="badge badge-optional">オプション</span></td>
+                            <td>企業の住所</td>
+                        </tr>
+                        <tr>
+                            <td>headquarters_lat</td>
+                            <td>number</td>
+                            <td><span class="badge badge-optional">オプション</span></td>
+                            <td>本社の緯度（-90.0 ～ 90.0）</td>
+                        </tr>
+                        <tr>
+                            <td>headquarters_lng</td>
+                            <td>number</td>
+                            <td><span class="badge badge-optional">オプション</span></td>
+                            <td>本社の経度（-180.0 ～ 180.0）</td>
+                        </tr>
+                        <tr>
+                            <td>phone</td>
+                            <td>string</td>
+                            <td><span class="badge badge-optional">オプション</span></td>
+                            <td>企業の電話番号。フォーマット: +81-XX-XXXX-XXXX</td>
+                        </tr>
+                        <tr>
+                            <td>email</td>
+                            <td>string</td>
+                            <td><span class="badge badge-optional">オプション</span></td>
+                            <td>企業のメールアドレス</td>
+                        </tr>
+                        <tr>
+                            <td>logo_url</td>
+                            <td>string</td>
+                            <td><span class="badge badge-optional">オプション</span></td>
+                            <td>企業ロゴの URL（有効な URL 形式）</td>
+                        </tr>
+                        <tr>
+                            <td>plan</td>
+                            <td>enum</td>
+                            <td><span class="badge badge-optional">オプション</span></td>
+                            <td>プラン: free / standard / premium。デフォルト: free</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>リクエスト例</h4>
+                <pre class="code-block">{
+  "name": "ヤマト運送 渋谷支店",
+  "display_name": "高速配送業者 A",
+  "address": "東京都渋谷区道玄坂 1-2-3",
+  "headquarters_lat": 35.6595,
+  "headquarters_lng": 139.7004,
+  "phone": "+81-3-1234-5678",
+  "email": "contact@company.example.com",
+  "logo_url": "https://example.com/logo.png",
+  "plan": "standard"
+}</pre>
+
+                <h4>レスポンス (201 Created)</h4>
+                <pre class="code-block">{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "ヤマト運送 渋谷支店",
+  "display_name": "高速配送業者 A",
+  "address": "東京都渋谷区道玄坂 1-2-3",
+  "headquarters_lat": 35.6595,
+  "headquarters_lng": 139.7004,
+  "phone": "+81-3-1234-5678",
+  "email": "contact@company.example.com",
+  "logo_url": "https://example.com/logo.png",
+  "rating_avg": 0,
+  "total_deals": 0,
+  "plan": "standard",
+  "created_at": "2026-03-20T10:00:00Z",
+  "updated_at": "2026-03-20T10:00:00Z"
+}</pre>
+
+                <!-- エンドポイント2 -->
+                <h3>2. 企業情報を取得</h3>
+                <div class="api-endpoint">
+                    <span class="method-get">GET</span> /api/v1/companies/:id
+                </div>
+                <p>指定した ID の企業情報を取得します。情報開示ステージに応じてフィルタリングされます。</p>
+
+                <h4>パラメータ</h4>
+                <table class="parameter-table">
+                    <thead>
+                        <tr>
+                            <th>パラメータ</th>
+                            <th>型</th>
+                            <th>説明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>id</td>
+                            <td>string (UUID)</td>
+                            <td>企業 ID（パスパラメータ）</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>レスポンス例 (段階1: 検索)</h4>
+                <pre class="code-block">{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "display_name": "高速配送業者 A",
+  "logo_url": "https://example.com/logo.png",
+  "rating_avg": 4.5,
+  "total_deals": 124
+}</pre>
+
+                <h4>レスポンス例 (段階2: マッチング承認)</h4>
+                <pre class="code-block">{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "ヤマト運送 渋谷支店",
+  "display_name": "高速配送業者 A",
+  "logo_url": "https://example.com/logo.png",
+  "rating_avg": 4.5,
+  "total_deals": 124
+}</pre>
+
+                <h4>レスポンス例 (段階3: 支払い完了)</h4>
+                <pre class="code-block">{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "ヤマト運送 渋谷支店",
+  "display_name": "高速配送業者 A",
+  "address": "東京都渋谷区道玄坂 1-2-3",
+  "headquarters_lat": 35.6595,
+  "headquarters_lng": 139.7004,
+  "phone": "+81-3-1234-5678",
+  "email": "contact@company.example.com",
+  "logo_url": "https://example.com/logo.png",
+  "rating_avg": 4.5,
+  "total_deals": 124,
+  "plan": "standard",
+  "created_at": "2026-03-20T10:00:00Z",
+  "updated_at": "2026-03-20T10:00:00Z"
+}</pre>
+
+                <!-- エンドポイント3 -->
+                <h3>3. 企業を検索</h3>
+                <div class="api-endpoint">
+                    <span class="method-get">GET</span> /api/v1/companies/search?q=<query>&sort=<sort>&limit=<limit>
+                </div>
+                <p>
+                    display_name で企業を検索します。複数の企業がヒットする場合、rating_avg でソートされます。
+                    このエンドポイントでは常に段階1の情報（display_name のみ）が返されます。
+                </p>
+
+                <h4>クエリパラメータ</h4>
+                <table class="parameter-table">
+                    <thead>
+                        <tr>
+                            <th>パラメータ</th>
+                            <th>型</th>
+                            <th>デフォルト</th>
+                            <th>説明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>q</td>
+                            <td>string</td>
+                            <td>-</td>
+                            <td><span class="badge badge-required">必須</span> 検索キーワード</td>
+                        </tr>
+                        <tr>
+                            <td>sort</td>
+                            <td>enum</td>
+                            <td>rating</td>
+                            <td>ソート順: rating / deals / recent</td>
+                        </tr>
+                        <tr>
+                            <td>limit</td>
+                            <td>integer</td>
+                            <td>20</td>
+                            <td>返す結果数（1～100）</td>
+                        </tr>
+                        <tr>
+                            <td>offset</td>
+                            <td>integer</td>
+                            <td>0</td>
+                            <td>オフセット（ページネーション用）</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>リクエスト例</h4>
+                <pre class="code-block">GET /api/v1/companies/search?q=配送&sort=rating&limit=10</pre>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="code-block">{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "display_name": "高速配送業者 A",
+      "logo_url": "https://example.com/logo.png",
+      "rating_avg": 4.8,
+      "total_deals": 256
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "display_name": "信頼の配送業者 B",
+      "logo_url": "https://example.com/logo2.png",
+      "rating_avg": 4.5,
+      "total_deals": 124
+    }
+  ],
+  "total": 42,
+  "limit": 10,
+  "offset": 0
+}</pre>
+
+                <!-- エンドポイント4 -->
+                <h3>4. 企業情報を更新</h3>
+                <div class="api-endpoint">
+                    <span class="method-put">PUT</span> /api/v1/companies/:id
+                </div>
+                <p>企業情報を部分更新します。企業自身またはプラットフォーム管理者のみ更新可能です。</p>
+
+                <h4>リクエスト（部分更新）</h4>
+                <table class="parameter-table">
+                    <thead>
+                        <tr>
+                            <th>パラメータ</th>
+                            <th>型</th>
+                            <th>説明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>display_name</td>
+                            <td>string</td>
+                            <td>新しい表示名</td>
+                        </tr>
+                        <tr>
+                            <td>address</td>
+                            <td>string</td>
+                            <td>新しい住所</td>
+                        </tr>
+                        <tr>
+                            <td>headquarters_lat</td>
+                            <td>number</td>
+                            <td>新しい緯度</td>
+                        </tr>
+                        <tr>
+                            <td>headquarters_lng</td>
+                            <td>number</td>
+                            <td>新しい経度</td>
+                        </tr>
+                        <tr>
+                            <td>phone</td>
+                            <td>string</td>
+                            <td>新しい電話番号</td>
+                        </tr>
+                        <tr>
+                            <td>email</td>
+                            <td>string</td>
+                            <td>新しいメールアドレス</td>
+                        </tr>
+                        <tr>
+                            <td>logo_url</td>
+                            <td>string</td>
+                            <td>新しいロゴ URL</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>リクエスト例</h4>
+                <pre class="code-block">{
+  "display_name": "超高速配送 A",
+  "phone": "+81-3-9999-8888"
+}</pre>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="code-block">{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "ヤマト運送 渋谷支店",
+  "display_name": "超高速配送 A",
+  "address": "東京都渋谷区道玄坂 1-2-3",
+  "headquarters_lat": 35.6595,
+  "headquarters_lng": 139.7004,
+  "phone": "+81-3-9999-8888",
+  "email": "contact@company.example.com",
+  "logo_url": "https://example.com/logo.png",
+  "rating_avg": 4.5,
+  "total_deals": 124,
+  "plan": "standard",
+  "created_at": "2026-03-20T10:00:00Z",
+  "updated_at": "2026-03-20T12:30:45Z"
+}</pre>
+
+                <h3>エラーレスポンス</h3>
+                <h4>400 Bad Request</h4>
+                <pre class="code-block">{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "バリデーションエラー",
+    "details": [
+      {
+        "field": "email",
+        "message": "有効なメールアドレス形式ではありません"
+      }
+    ]
+  }
+}</pre>
+
+                <h4>404 Not Found</h4>
+                <pre class="code-block">{
+  "error": {
+    "code": "COMPANY_NOT_FOUND",
+    "message": "指定した企業が見つかりません"
+  }
+}</pre>
+
+                <h4>409 Conflict</h4>
+                <pre class="code-block">{
+  "error": {
+    "code": "DUPLICATE_NAME",
+    "message": "この企業名は既に使用されています"
+  }
+}</pre>
+            </section>
+
+            <!-- セクション5: 関連図 -->
+            <section id="relationship">
+                <h2>5. 関連図</h2>
+                <p>企業テーブルと他のテーブルの関連を示します。</p>
+
+                <h3>エンティティ関連図</h3>
+                <div class="diagram">
+<pre>
+┌─────────────────────────────────────┐
+│        COMPANIES (企業)              │
+├─────────────────────────────────────┤
+│ id (PK)                             │
+│ name (UNIQUE)                       │
+│ display_name                        │
+│ address                             │
+│ headquarters_lat / lng              │
+│ phone                               │
+│ email                               │
+│ logo_url                            │
+│ rating_avg                          │
+│ total_deals                         │
+│ plan                                │
+│ created_at                          │
+│ updated_at                          │
+└─────────────────────────────────────┘
+           │
+           │ (1:N) company_id
+           │
+    ┌──────┴──────┬──────────────┐
+    │             │              │
+    ▼             ▼              ▼
+┌────────────┐ ┌─────────────┐ ┌──────────────┐
+│   USERS    │ │  VEHICLES   │ │DISPATCH_PLANS│
+├────────────┤ ├─────────────┤ ├──────────────┤
+│ id         │ │ id          │ │ id           │
+│ company_id │ │ company_id  │ │ company_id   │
+│ name       │ │ model       │ │ status       │
+│ email      │ │ license     │ │ pickup_at    │
+└────────────┘ │ status      │ │ delivery_at  │
+               └─────────────┘ └──────────────┘
+</pre>
+                </div>
+
+                <h3>関連の説明</h3>
+                <ul>
+                    <li>
+                        <strong>Companies → Users (1:N)</strong>
+                        <br>
+                        企業に所属するユーザー。users テーブルの company_id は companies.name を参照
+                    </li>
+                    <li>
+                        <strong>Companies → Vehicles (1:N)</strong>
+                        <br>
+                        企業が保有する配送車両。GPS トラッキングやキャパシティ管理に使用
+                    </li>
+                    <li>
+                        <strong>Companies → Dispatch_Plans (1:N)</strong>
+                        <br>
+                        企業が提供する配送計画。ステータス、ピックアップ時刻、配送予定時刻を含む
+                    </li>
+                </ul>
+            </section>
+
+            <!-- セクション6: ビジネスルール -->
+            <section id="business-rules">
+                <h2>6. ビジネスルール</h2>
+
+                <div class="business-rule">
+                    <h4>ルール1: 企業名の一意性</h4>
+                    <p>
+                        <strong>name カラムは UNIQUE 制約を持ちます。</strong>
+                        システム内でどの企業も同じ実名を持つことはできません。
+                        これにより、ユーザーテーブルで正確な company_id 参照が可能になります。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール2: display_name の重複許容</h4>
+                    <p>
+                        <strong>display_name は複数の企業が同じ値を持つことができます。</strong>
+                        これは検索結果で複数の企業が同じ匿名名で表示される可能性があることを意味します。
+                        ユーザーは rating_avg や total_deals を基準に選択します。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール3: デフォルトプラン</h4>
+                    <p>
+                        <strong>企業の plan カラムのデフォルト値は 'free' です。</strong>
+                        新規登録企業は自動的に無料プランに割り当てられ、
+                        企業自身がアップグレードを申請することで standard または premium に変更できます。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール4: 地理情報の許容性</h4>
+                    <p>
+                        <strong>headquarters_lat と headquarters_lng は NULL 可能です。</strong>
+                        国際的な企業や住所がない企業も登録できるよう、地理情報は必須ではありません。
+                        ただし、配送計画での地理情報クエリを利用する企業は、これらの値の設定を推奨されます。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール5: rating_avg の初期値</h4>
+                    <p>
+                        <strong>新規登録企業の rating_avg は 0 です。</strong>
+                        企業が初めての配送を完了し、レビュー評価を受けることで、
+                        rating_avg が更新されます。0 の企業は検索結果のソートで下位に表示されます。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール6: total_deals のインクリメント</h4>
+                    <p>
+                        <strong>total_deals は配送が完了するたびに 1 ずつ増加します。</strong>
+                        この値は企業の信用スコアの一部として機能し、検索フィルタリングや
+                        ユーザーの選択判断に影響します。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール7: 所有権と更新権限</h4>
+                    <p>
+                        <strong>企業情報は以下の条件でのみ更新可能です：</strong>
+                    </p>
+                    <ul>
+                        <li>企業自身の認証されたユーザー（company_id が一致）</li>
+                        <li>プラットフォーム管理者（admin ロール）</li>
+                    </ul>
+                    <p>
+                        <strong>name カラムは企業作成後は更新不可です。</strong>
+                        これは参照整合性を保証するため、ユーザーテーブルが company.name を参照しているためです。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール8: 情報開示の厳格性</h4>
+                    <p>
+                        <strong>情報開示ステージは API レスポンスで厳格に適用されなければなりません。</strong>
+                        クライアント側で情報を隠すのではなく、サーバー側で確実にフィルタリングする必要があります。
+                        これにより、API を直接呼び出すクライアントであっても、段階的な開示が保証されます。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール9: logo_url のバリデーション</h4>
+                    <p>
+                        <strong>logo_url は有効な HTTPS URL である必要があります。</strong>
+                        HTTP URL は受け入れられません。これはセキュリティ上の理由（中間者攻撃の防止）と、
+                        ブラウザの Mixed Content ポリシーへの準拠です。
+                    </p>
+                </div>
+
+                <div class="business-rule">
+                    <h4>ルール10: 電話番号のフォーマット</h4>
+                    <p>
+                        <strong>phone カラムの推奨フォーマット：</strong>
+                    </p>
+                    <ul>
+                        <li>国際フォーマット: +81-3-1234-5678（日本の場合）</li>
+                        <li>データベースには正規化されたフォーマットで保存</li>
+                        <li>クライアント側で地域に応じた表示フォーマットに変換</li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p><strong>ドキュメント情報</strong></p>
+            <ul style="list-style: none; padding: 0;">
+                <li>最終更新日時: 2026-03-20</li>
+                <li>バージョン: 1.0.0</li>
+                <li>API Version: v1</li>
+                <li>著者: 配送プラットフォーム開発チーム</li>
+            </ul>
+            <p style="margin-top: 1.5rem; color: #999;">
+                このドキュメントは機密情報です。許可なく複製・配布を禁止します。
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

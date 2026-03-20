@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配送プラットフォーム - ドライバー管理仕様</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ヘッダー -->
+    <header class="header">
+        <div class="header-content">
+            <h1>配送プラットフォーム API仕様書</h1>
+            <nav class="nav">
+                <ul>
+                    <li><a href="index.html">ホーム</a></li>
+                    <li><a href="vehicle.html">車両管理</a></li>
+                    <li><a href="driver.html" class="active">ドライバー管理</a></li>
+                    <li><a href="#">その他の仕様</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- ブレッドクラム -->
+    <div class="breadcrumb">
+        <a href="index.html">ホーム</a> / <span>ドライバー管理仕様</span>
+    </div>
+
+    <!-- メインコンテンツ -->
+    <main class="container">
+        <!-- 概要 -->
+        <section class="spec-section">
+            <h2>概要</h2>
+            <p>
+                ドライバー管理モジュールは、配送プラットフォームにおけるドライバーの登録・管理・運用を担当します。
+                ユーザーシステムとは独立したドライバーテーブルを使用し、
+                免許情報・安全実績・資格情報を一元管理します。
+            </p>
+            <p>
+                本仕様では、ドライバーテーブル、日次点検テーブル、API エンドポイント、
+                および ユーザーシステムとの関係性について詳細に記載します。
+            </p>
+        </section>
+
+        <!-- データベーススキーマ -->
+        <section class="spec-section">
+            <h2>データベーススキーマ</h2>
+
+            <h3>drivers テーブル</h3>
+            <p>
+                ドライバー固有の情報を管理するテーブルです。
+                <code>users</code> テーブルとは分離して管理され、
+                ドライバーに必要な特殊な属性（免許情報、資格、事故歴など）を保持します。
+            </p>
+
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>カラム名</th>
+                        <th>データ型</th>
+                        <th>制約</th>
+                        <th>説明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>id</td>
+                        <td>uint</td>
+                        <td>PRIMARY KEY</td>
+                        <td>ドライバーID（自動採番）</td>
+                    </tr>
+                    <tr>
+                        <td>user_id</td>
+                        <td>uint</td>
+                        <td>NOT NULL<br>FOREIGN KEY</td>
+                        <td>ユーザーID（users テーブルとの関連）</td>
+                    </tr>
+                    <tr>
+                        <td>company_id</td>
+                        <td>uint</td>
+                        <td>NOT NULL<br>FOREIGN KEY</td>
+                        <td>所属企業ID</td>
+                    </tr>
+                    <tr>
+                        <td>license_number</td>
+                        <td>varchar(20)</td>
+                        <td>NOT NULL</td>
+                        <td>運転免許証番号</td>
+                    </tr>
+                    <tr>
+                        <td>license_class</td>
+                        <td>varchar(20)</td>
+                        <td></td>
+                        <td>免許区分（大型/中型/普通）</td>
+                    </tr>
+                    <tr>
+                        <td>license_expiry</td>
+                        <td>date</td>
+                        <td></td>
+                        <td>免許有効期限</td>
+                    </tr>
+                    <tr>
+                        <td>accident_count</td>
+                        <td>int</td>
+                        <td></td>
+                        <td>事故件数（累積）</td>
+                    </tr>
+                    <tr>
+                        <td>violation_count</td>
+                        <td>int</td>
+                        <td></td>
+                        <td>違反件数（累積）</td>
+                    </tr>
+                    <tr>
+                        <td>has_hazmat</td>
+                        <td>bool</td>
+                        <td></td>
+                        <td>危険物運送資格有無</td>
+                    </tr>
+                    <tr>
+                        <td>has_forklift</td>
+                        <td>bool</td>
+                        <td></td>
+                        <td>フォークリフト操作資格有無</td>
+                    </tr>
+                    <tr>
+                        <td>created_at</td>
+                        <td>timestamp</td>
+                        <td></td>
+                        <td>作成日時</td>
+                    </tr>
+                    <tr>
+                        <td>updated_at</td>
+                        <td>timestamp</td>
+                        <td></td>
+                        <td>更新日時</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>daily_inspections テーブル</h3>
+            <p>
+                ドライバーの日次点検記録を管理するテーブルです。
+                出勤時のアルコール検査・健康状態・整備状況などを記録します。
+            </p>
+
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>カラム名</th>
+                        <th>データ型</th>
+                        <th>制約</th>
+                        <th>説明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>id</td>
+                        <td>uint</td>
+                        <td>PRIMARY KEY</td>
+                        <td>点検記録ID（自動採番）</td>
+                    </tr>
+                    <tr>
+                        <td>driver_id</td>
+                        <td>uint</td>
+                        <td>NOT NULL<br>FOREIGN KEY</td>
+                        <td>ドライバーID</td>
+                    </tr>
+                    <tr>
+                        <td>dispatch_plan_id</td>
+                        <td>uint</td>
+                        <td>NOT NULL<br>FOREIGN KEY</td>
+                        <td>配送計画ID</td>
+                    </tr>
+                    <tr>
+                        <td>inspected_at</td>
+                        <td>timestamp</td>
+                        <td></td>
+                        <td>点検実施日時</td>
+                    </tr>
+                    <tr>
+                        <td>alcohol_level</td>
+                        <td>float64</td>
+                        <td></td>
+                        <td>呼気中アルコール濃度（mg/100ml）</td>
+                    </tr>
+                    <tr>
+                        <td>health_status</td>
+                        <td>varchar(20)</td>
+                        <td></td>
+                        <td>健康状態（good/poor）</td>
+                    </tr>
+                    <tr>
+                        <td>note</td>
+                        <td>text</td>
+                        <td></td>
+                        <td>備考</td>
+                    </tr>
+                    <tr>
+                        <td>inspector_id</td>
+                        <td>uint</td>
+                        <td></td>
+                        <td>点検者ID（ユーザーID）</td>
+                    </tr>
+                    <tr>
+                        <td>created_at</td>
+                        <td>timestamp</td>
+                        <td></td>
+                        <td>作成日時</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>免許区分（license_class）の説明</h3>
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>区分</th>
+                        <th>説明</th>
+                        <th>運転可能車両</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>普通</td>
+                        <td>普通自動車運転免許</td>
+                        <td>軽トラ、一部の2tトラック</td>
+                    </tr>
+                    <tr>
+                        <td>中型</td>
+                        <td>中型自動車運転免許</td>
+                        <td>2t、4t トラック</td>
+                    </tr>
+                    <tr>
+                        <td>大型</td>
+                        <td>大型自動車運転免許</td>
+                        <td>すべてのトラック</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>健康状態（health_status）の説明</h3>
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>ステータス</th>
+                        <th>説明</th>
+                        <th>配送可能</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>good</td>
+                        <td>健康。配送に従事可能な状態</td>
+                        <td>〇 可能</td>
+                    </tr>
+                    <tr>
+                        <td>poor</td>
+                        <td>不良。体調不良などにより配送に従事不可</td>
+                        <td>× 不可</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- リレーションシップ -->
+        <section class="spec-section">
+            <h2>リレーションシップ</h2>
+
+            <h3>ドライバー関連テーブルの関係図</h3>
+            <div class="relationship-diagram">
+                <div class="entity">
+                    <h4>users</h4>
+                    <p>ユーザー</p>
+                </div>
+                <div class="relationship-arrow">1:1</div>
+                <div class="entity">
+                    <h4>drivers</h4>
+                    <p>ドライバー</p>
+                </div>
+            </div>
+
+            <div class="relationship-diagram">
+                <div class="entity">
+                    <h4>companies</h4>
+                    <p>企業</p>
+                </div>
+                <div class="relationship-arrow">1:N</div>
+                <div class="entity">
+                    <h4>drivers</h4>
+                    <p>ドライバー</p>
+                </div>
+            </div>
+
+            <div class="relationship-diagram">
+                <div class="entity">
+                    <h4>drivers</h4>
+                    <p>ドライバー</p>
+                </div>
+                <div class="relationship-arrow">1:N</div>
+                <div class="entity">
+                    <h4>daily_inspections</h4>
+                    <p>日次点検</p>
+                </div>
+            </div>
+
+            <div class="relationship-diagram">
+                <div class="entity">
+                    <h4>dispatch_plans</h4>
+                    <p>配送計画</p>
+                </div>
+                <div class="relationship-arrow">1:N</div>
+                <div class="entity">
+                    <h4>daily_inspections</h4>
+                    <p>日次点検</p>
+                </div>
+            </div>
+
+            <h3>関係性の説明</h3>
+            <ul>
+                <li>
+                    <strong>users ← 1:1 → drivers：</strong>
+                    各ドライバーは1人のユーザーに対応します。
+                    ユーザーはドライバーの認証・認可に使用されます。
+                </li>
+                <li>
+                    <strong>companies ← 1:N → drivers：</strong>
+                    1社は複数のドライバーを雇用できます。
+                    各ドライバーは必ず1つの企業に所属します。
+                </li>
+                <li>
+                    <strong>drivers ← 1:N → daily_inspections：</strong>
+                    1ドライバーは複数の日次点検記録を持ちます。
+                    毎日の点検が記録として蓄積されます。
+                </li>
+                <li>
+                    <strong>dispatch_plans ← 1:N → daily_inspections：</strong>
+                    1つの配送計画に対して1つの点検が関連付けられます。
+                    点検はその日の配送計画と関連します。
+                </li>
+            </ul>
+        </section>
+
+        <!-- ドライバーテーブルの分離について -->
+        <section class="spec-section">
+            <h2>ドライバーテーブルが users から分離されている理由</h2>
+
+            <h3>1. ドライバー固有のドメイン知識の分離</h3>
+            <p>
+                <code>users</code> テーブルはシステム全体の基本ユーザー情報を管理します。
+                一方、<code>drivers</code> テーブルはドライバーという特定の役割に関する情報を管理します。
+                この分離により、各エンティティの責務が明確になり、保守性が向上します。
+            </p>
+
+            <h3>2. ドライバー固有フィールドの管理</h3>
+            <p>
+                ドライバーには以下のような固有フィールドが必要です：
+            </p>
+            <ul>
+                <li>運転免許情報（免許番号、区分、有効期限）</li>
+                <li>安全実績（事故件数、違反件数）</li>
+                <li>資格情報（危険物運送、フォークリフト操作）</li>
+            </ul>
+            <p>
+                これらのフィールドを <code>users</code> テーブルに含めると、
+                テーブルが肥大化し、ユーザー管理の複雑性が増します。
+            </p>
+
+            <h3>3. マルチロール対応</h3>
+            <p>
+                ユーザーが複数の役割を持つ可能性があります
+                （例：管理者でありつつドライバー）。
+                分離することで、各ユーザーは複数のドライバー記録を持つ可能性を排除し、
+                データモデルを単純化します。
+            </p>
+
+            <h3>4. データベーススキーマの柔軟性</h3>
+            <p>
+                <code>drivers</code> テーブルを独立させることで、
+                ドライバー関連の機能追加や仕様変更が、
+                ユーザーシステム全体に影響を与えません。
+            </p>
+
+            <h3>5. アクセス制御と監査</h3>
+            <p>
+                ドライバー情報へのアクセスを細かく制御できます。
+                ドライバー関連の変更を独立して監査・ロギングすることが容易になります。
+            </p>
+        </section>
+
+        <!-- API エンドポイント -->
+        <section class="spec-section">
+            <h2>API エンドポイント</h2>
+
+            <h3>ドライバー管理エンドポイント</h3>
+
+            <h4>1. ドライバー一覧取得</h4>
+            <div class="endpoint">
+                <div class="method get">GET</div>
+                <div class="path">/api/v1/drivers</div>
+            </div>
+            <p><strong>説明：</strong> 企業に属するドライバー一覧を取得します。</p>
+            <p><strong>クエリパラメータ：</strong></p>
+            <ul>
+                <li><code>company_id</code> (uint, required): 企業ID</li>
+                <li><code>page</code> (int, optional): ページ番号</li>
+                <li><code>limit</code> (int, optional): 1ページあたりの件数</li>
+            </ul>
+
+            <div class="code-block">
+                <p class="code-label">リクエスト例：</p>
+                <pre><code>GET /api/v1/drivers?company_id=1&page=1&limit=20</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": [
+    {
+      "id": 1,
+      "user_id": 5,
+      "company_id": 1,
+      "license_number": "1234567890123",
+      "license_class": "大型",
+      "license_expiry": "2028-06-30",
+      "accident_count": 0,
+      "violation_count": 0,
+      "has_hazmat": true,
+      "has_forklift": false,
+      "created_at": "2026-01-10T08:00:00Z",
+      "updated_at": "2026-03-20T14:22:00Z"
+    },
+    {
+      "id": 2,
+      "user_id": 6,
+      "company_id": 1,
+      "license_number": "1234567890124",
+      "license_class": "中型",
+      "license_expiry": "2027-12-25",
+      "accident_count": 1,
+      "violation_count": 0,
+      "has_hazmat": false,
+      "has_forklift": true,
+      "created_at": "2026-02-05T09:15:00Z",
+      "updated_at": "2026-03-20T14:22:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 2,
+    "total_pages": 1
+  }
+}</code></pre>
+            </div>
+
+            <h4>2. ドライバー詳細取得</h4>
+            <div class="endpoint">
+                <div class="method get">GET</div>
+                <div class="path">/api/v1/drivers/:id</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">リクエスト例：</p>
+                <pre><code>GET /api/v1/drivers/1</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": {
+    "id": 1,
+    "user_id": 5,
+    "company_id": 1,
+    "license_number": "1234567890123",
+    "license_class": "大型",
+    "license_expiry": "2028-06-30",
+    "accident_count": 0,
+    "violation_count": 0,
+    "has_hazmat": true,
+    "has_forklift": false,
+    "created_at": "2026-01-10T08:00:00Z",
+    "updated_at": "2026-03-20T14:22:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h4>3. ドライバー作成</h4>
+            <div class="endpoint">
+                <div class="method post">POST</div>
+                <div class="path">/api/v1/drivers</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">リクエストボディ例：</p>
+                <pre><code>{
+  "user_id": 7,
+  "company_id": 1,
+  "license_number": "1234567890125",
+  "license_class": "普通",
+  "license_expiry": "2026-09-15",
+  "accident_count": 0,
+  "violation_count": 0,
+  "has_hazmat": false,
+  "has_forklift": false
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（201 Created）：</p>
+                <pre><code>{
+  "data": {
+    "id": 3,
+    "user_id": 7,
+    "company_id": 1,
+    "license_number": "1234567890125",
+    "license_class": "普通",
+    "license_expiry": "2026-09-15",
+    "accident_count": 0,
+    "violation_count": 0,
+    "has_hazmat": false,
+    "has_forklift": false,
+    "created_at": "2026-03-20T15:30:00Z",
+    "updated_at": "2026-03-20T15:30:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h4>4. ドライバー更新</h4>
+            <div class="endpoint">
+                <div class="method put">PUT</div>
+                <div class="path">/api/v1/drivers/:id</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">リクエストボディ例：</p>
+                <pre><code>{
+  "has_hazmat": true,
+  "accident_count": 1
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": {
+    "id": 1,
+    "user_id": 5,
+    "company_id": 1,
+    "license_number": "1234567890123",
+    "license_class": "大型",
+    "license_expiry": "2028-06-30",
+    "accident_count": 1,
+    "violation_count": 0,
+    "has_hazmat": true,
+    "has_forklift": false,
+    "created_at": "2026-01-10T08:00:00Z",
+    "updated_at": "2026-03-20T15:35:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h4>5. ドライバー削除</h4>
+            <div class="endpoint">
+                <div class="method delete">DELETE</div>
+                <div class="path">/api/v1/drivers/:id</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（204 No Content）：</p>
+                <pre><code>（レスポンスボディなし）</code></pre>
+            </div>
+
+            <h3>日次点検エンドポイント</h3>
+
+            <h4>1. 点検記録一覧取得</h4>
+            <div class="endpoint">
+                <div class="method get">GET</div>
+                <div class="path">/api/v1/daily-inspections</div>
+            </div>
+            <p><strong>説明：</strong> ドライバーの日次点検記録一覧を取得します。</p>
+            <p><strong>クエリパラメータ：</strong></p>
+            <ul>
+                <li><code>driver_id</code> (uint, optional): ドライバーID</li>
+                <li><code>dispatch_plan_id</code> (uint, optional): 配送計画ID</li>
+                <li><code>date_from</code> (string, optional): 検査日始 (YYYY-MM-DD)</li>
+                <li><code>date_to</code> (string, optional): 検査日終 (YYYY-MM-DD)</li>
+                <li><code>page</code> (int, optional): ページ番号</li>
+                <li><code>limit</code> (int, optional): 1ページあたりの件数</li>
+            </ul>
+
+            <div class="code-block">
+                <p class="code-label">リクエスト例：</p>
+                <pre><code>GET /api/v1/daily-inspections?driver_id=1&date_from=2026-03-01&date_to=2026-03-31</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": [
+    {
+      "id": 1,
+      "driver_id": 1,
+      "dispatch_plan_id": 101,
+      "inspected_at": "2026-03-20T07:00:00Z",
+      "alcohol_level": 0.0,
+      "health_status": "good",
+      "note": "正常",
+      "inspector_id": 10,
+      "created_at": "2026-03-20T07:00:00Z"
+    },
+    {
+      "id": 2,
+      "driver_id": 1,
+      "dispatch_plan_id": 102,
+      "inspected_at": "2026-03-19T07:15:00Z",
+      "alcohol_level": 0.0,
+      "health_status": "good",
+      "note": "特に異常なし",
+      "inspector_id": 10,
+      "created_at": "2026-03-19T07:15:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 2,
+    "total_pages": 1
+  }
+}</code></pre>
+            </div>
+
+            <h4>2. 点検記録詳細取得</h4>
+            <div class="endpoint">
+                <div class="method get">GET</div>
+                <div class="path">/api/v1/daily-inspections/:id</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（200 OK）：</p>
+                <pre><code>{
+  "data": {
+    "id": 1,
+    "driver_id": 1,
+    "dispatch_plan_id": 101,
+    "inspected_at": "2026-03-20T07:00:00Z",
+    "alcohol_level": 0.0,
+    "health_status": "good",
+    "note": "正常",
+    "inspector_id": 10,
+    "created_at": "2026-03-20T07:00:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h4>3. 点検記録作成</h4>
+            <div class="endpoint">
+                <div class="method post">POST</div>
+                <div class="path">/api/v1/daily-inspections</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">リクエストボディ例：</p>
+                <pre><code>{
+  "driver_id": 1,
+  "dispatch_plan_id": 103,
+  "inspected_at": "2026-03-20T08:00:00Z",
+  "alcohol_level": 0.0,
+  "health_status": "good",
+  "note": "出勤時検査完了",
+  "inspector_id": 10
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（201 Created）：</p>
+                <pre><code>{
+  "data": {
+    "id": 3,
+    "driver_id": 1,
+    "dispatch_plan_id": 103,
+    "inspected_at": "2026-03-20T08:00:00Z",
+    "alcohol_level": 0.0,
+    "health_status": "good",
+    "note": "出勤時検査完了",
+    "inspector_id": 10,
+    "created_at": "2026-03-20T08:00:00Z"
+  }
+}</code></pre>
+            </div>
+
+            <h4>4. 点検記録更新</h4>
+            <div class="endpoint">
+                <div class="method put">PUT</div>
+                <div class="path">/api/v1/daily-inspections/:id</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">リクエストボディ例：</p>
+                <pre><code>{
+  "health_status": "poor",
+  "note": "体調不良のため本日の配送は中止"
+}</code></pre>
+            </div>
+
+            <h4>5. 点検記録削除</h4>
+            <div class="endpoint">
+                <div class="method delete">DELETE</div>
+                <div class="path">/api/v1/daily-inspections/:id</div>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">レスポンス例（204 No Content）：</p>
+                <pre><code>（レスポンスボディなし）</code></pre>
+            </div>
+        </section>
+
+        <!-- 実装上の考慮事項 -->
+        <section class="spec-section">
+            <h2>実装上の考慮事項</h2>
+
+            <h3>日次点検とドライバー出勤フロー</h3>
+            <p>
+                出勤時の流れは以下の通りです：
+            </p>
+            <ol>
+                <li>ドライバーが出勤</li>
+                <li>管理者またはドライバー自身が日次点検を実施</li>
+                <li>アルコール検査（呼気アルコール濃度測定）を実施</li>
+                <li>健康状態をチェック</li>
+                <li>点検記録を <code>daily_inspections</code> テーブルに記録</li>
+                <li>問題がなければ配送業務に従事</li>
+                <li>問題がある場合は配送を中止</li>
+            </ol>
+
+            <h3>免許有効期限の管理</h3>
+            <p>
+                <code>license_expiry</code> が過期している場合、
+                そのドライバーは配送業務に従事することはできません。
+                アプリケーションロジックで有効期限をチェックし、
+                期限切れドライバーを自動的に配送対象から除外する必要があります。
+            </p>
+
+            <h3>事故・違反件数の追跡</h3>
+            <p>
+                <code>accident_count</code> と <code>violation_count</code> は累積値です。
+                事故や違反が発生した場合、これらのカウントを増加させます。
+                これらの値が一定の閾値を超える場合、
+                ドライバーの配送業務を制限することが望ましいです。
+            </p>
+
+            <h3>アルコール検査値</h3>
+            <p>
+                <code>alcohol_level</code> は呼気中アルコール濃度（mg/100ml）です。
+                日本の法令では、0.15mg/100ml 以上は道路交通法違反となります。
+                0 に近いほど安全です。アプリケーション側で閾値を設定し、
+                一定値以上の場合は配送を禁止する必要があります。
+            </p>
+
+            <h3>資格情報の管理</h3>
+            <p>
+                <code>has_hazmat</code> と <code>has_forklift</code> は、
+                ドライバーの資格を示すフラグです。
+                配送計画作成時に、必要な資格を持つドライバーのみを配置する必要があります。
+            </p>
+        </section>
+
+        <!-- エラーレスポンス -->
+        <section class="spec-section">
+            <h2>エラーレスポンス</h2>
+
+            <div class="code-block">
+                <p class="code-label">400 Bad Request：</p>
+                <pre><code>{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "リクエストパラメータが不正です"
+  }
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">404 Not Found：</p>
+                <pre><code>{
+  "error": {
+    "code": "DRIVER_NOT_FOUND",
+    "message": "指定されたドライバーが見つかりません"
+  }
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+                <p class="code-label">409 Conflict（免許期限切れ）：</p>
+                <pre><code>{
+  "error": {
+    "code": "LICENSE_EXPIRED",
+    "message": "免許の有効期限が切れています"
+  }
+}</code></pre>
+            </div>
+        </section>
+    </main>
+
+    <!-- フッター -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>&copy; 2026 配送プラットフォーム。All rights reserved.</p>
+            <p>最終更新：2026-03-20</p>
+        </div>
+    </footer>
+</body>
+</html>

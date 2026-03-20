@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>レビュー・評価 - delivery-api 仕様書</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>delivery-api 仕様書</h1>
+      <nav>
+        <a href="index.html">← インデックスへ</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">ホーム</a> / <span>レビュー・評価仕様</span>
+    </div>
+
+    <!-- Overview -->
+    <h2>レビュー・評価機能 (Review & Rating)</h2>
+    <div class="card">
+      <h3>概要</h3>
+      <p>マッチングが完了した後、両者がお互いの相手を評価できる仕組みです。重要な点として、<strong>評価の対象は「人」ではなく「会社」</strong>です。ドライバーは日々変わりますが、会社の信頼スコアは累積されます。</p>
+      <p style="margin-top: 1rem;"><strong>主な特徴:</strong></p>
+      <ul>
+        <li>1人（または会社）が1つのマッチングに対して1回だけレビュー可能</li>
+        <li>評価対象は「会社」（運送会社 or 荷主企業）</li>
+        <li>星評価（1〜5）とテキストコメント</li>
+        <li>マッチング完了後のみレビュー可能</li>
+        <li>companies テーブルの <code>rating_avg</code> を自動更新（キャッシュ / デノーマライズ）</li>
+        <li>レビュー履歴は削除不可（監査対応）</li>
+      </ul>
+    </div>
+
+    <!-- Why Company-Level Rating -->
+    <h2>なぜ「人」ではなく「会社」か</h2>
+    <div class="card">
+      <h3>背景</h3>
+      <p>運送業界では、ドライバーが頻繁に変わります。毎日異なるドライバーが配送に当たるため、個人の評価では意味がありません。</p>
+
+      <h3>評価スコアの使い方</h3>
+      <ul>
+        <li><strong>マッチング検索時の表示:</strong> 「ABC運送 ★4.5 (98件）」と表示。ユーザーはスコアの高い会社を優先選択</li>
+        <li><strong>ソート・フィルタ:</strong> 検索結果を「評価の高い順」にソート可能</li>
+        <li><strong>アルゴリズム側:</strong> premium プラン会社の「優先表示」にも評価スコアを組み込み</li>
+        <li><strong>新規会社の課題:</strong> 0件の新規会社は不利。スタートアップ支援として initial_boost スコアを付与することも検討</li>
+      </ul>
+
+      <h3>ドライバーはどうする？</h3>
+      <p>別フェーズで実装予定。現在は会社単位の評価に集中。</p>
+    </div>
+
+    <!-- DB Schema -->
+    <h2>データベーススキーマ</h2>
+
+    <div class="card">
+      <h3>reviews テーブル</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>制約</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>レビューID</td>
+            <td>PRIMARY KEY, AUTO_INCREMENT</td>
+          </tr>
+          <tr>
+            <td><code>match_id</code></td>
+            <td>uint (FK)</td>
+            <td>マッチングID</td>
+            <td>FOREIGN KEY to matches</td>
+          </tr>
+          <tr>
+            <td><code>reviewer_id</code></td>
+            <td>uint (FK)</td>
+            <td>レビュアー（送信者）のユーザーID</td>
+            <td>FOREIGN KEY to users</td>
+          </tr>
+          <tr>
+            <td><code>reviewee_company_id</code></td>
+            <td>uint (FK)</td>
+            <td>被評価会社ID</td>
+            <td>FOREIGN KEY to companies</td>
+          </tr>
+          <tr>
+            <td><code>rating</code></td>
+            <td>tinyint (1-5)</td>
+            <td>星評価</td>
+            <td>1 / 2 / 3 / 4 / 5</td>
+          </tr>
+          <tr>
+            <td><code>comment</code></td>
+            <td>text</td>
+            <td>コメント / フィードバック</td>
+            <td>最大 500 文字（オプション）</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>timestamp</td>
+            <td>作成日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>ユニーク制約</h3>
+      <p>複合ユニークインデックス: <code>UNIQUE(match_id, reviewer_id)</code></p>
+      <p>⇒ 1人が1つのマッチングに対して複数回レビューできない</p>
+    </div>
+
+    <div class="card">
+      <h3>companies テーブル（抜粋）</h3>
+      <p>reviews テーブルと連動する、既存の companies テーブルに追加される評価スコア関連カラム。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>備考</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>rating_avg</code></td>
+            <td>decimal(3,2)</td>
+            <td>平均評価スコア</td>
+            <td>1.00 〜 5.00。取得時に動的計算 or キャッシュ</td>
+          </tr>
+          <tr>
+            <td><code>review_count</code></td>
+            <td>uint</td>
+            <td>レビュー総数</td>
+            <td>キャッシュ用。reviews テーブルの COUNT(id) と同期</td>
+          </tr>
+          <tr>
+            <td><code>rating_updated_at</code></td>
+            <td>timestamp</td>
+            <td>評価スコア更新日時</td>
+            <td>新規レビュー追加時に更新</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Rating Distribution -->
+    <h2>評価分布の追跡</h2>
+    <div class="card">
+      <h3>rating_distribution テーブル（オプション）</h3>
+      <p>評価の分布を高速取得するため、キャッシュテーブルを検討。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>ID</td>
+          </tr>
+          <tr>
+            <td><code>company_id</code></td>
+            <td>uint (FK)</td>
+            <td>会社ID</td>
+          </tr>
+          <tr>
+            <td><code>rating</code></td>
+            <td>tinyint (1-5)</td>
+            <td>評価（★）</td>
+          </tr>
+          <tr>
+            <td><code>count</code></td>
+            <td>uint</td>
+            <td>この評価の件数</td>
+          </tr>
+          <tr>
+            <td><code>updated_at</code></td>
+            <td>timestamp</td>
+            <td>更新日時</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 1rem;"><strong>使用例:</strong> フロントエンドで「★5が45件、★4が50件...」と表示するための快速参照用。</p>
+    </div>
+
+    <!-- Review Conditions -->
+    <h2>レビュー可能条件</h2>
+    <div class="card">
+      <h3>必須条件</h3>
+      <ol>
+        <li>マッチングのステータスが <code>completed</code> に遷移</li>
+        <li>決済が成功（payment status = <code>succeeded</code>）</li>
+        <li>レビュアーがマッチングに参加していた当事者（reviewer_id = match.requester_id or match.receiver_id）</li>
+        <li>同じ reviewer_id + match_id の組み合わせでまだレビューが存在しない</li>
+      </ol>
+
+      <h3>タイムスパン</h3>
+      <p>マッチング完了後、<strong>30日以内にレビュー投稿可能</strong>。それ以降は POST エンドポイントで 410 Gone を返す。</p>
+    </div>
+
+    <!-- API Endpoints -->
+    <h2>API エンドポイント</h2>
+
+    <div class="endpoint">
+      <span class="method method-post">POST</span>
+      <span class="path">/api/v1/reviews</span>
+      <div class="desc">新規レビューを投稿</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>リクエスト例</h4>
+      <pre><code>{
+  "match_id": 1000,
+  "rating": 5,
+  "comment": "丁寧な配送対応でした。次回もお願いしたいです！"
+}</code></pre>
+
+      <h4>レスポンス例（201 Created）</h4>
+      <pre><code>{
+  "id": 5001,
+  "match_id": 1000,
+  "reviewer_id": 10,
+  "reviewee_company_id": 50,
+  "rating": 5,
+  "comment": "丁寧な配送対応でした。次回もお願いしたいです！",
+  "created_at": "2026-03-20T15:30:00Z"
+}</code></pre>
+
+      <h4>エラーレスポンス例</h4>
+      <pre><code>// 409 Conflict - 既にレビュー済み
+{
+  "error": "既にこのマッチングに対するレビューを投稿しています"
+}
+
+// 410 Gone - 30日を超過
+{
+  "error": "このマッチングのレビュー投稿期限（30日）が過ぎています"
+}
+
+// 422 Unprocessable Entity - マッチングが完了していない
+{
+  "error": "マッチングがまだ完了していません。completed ステータス後にレビューを投稿してください"
+}</code></pre>
+    </div>
+
+    <div class="endpoint">
+      <span class="method method-get">GET</span>
+      <span class="path">/api/v1/reviews</span>
+      <div class="desc">レビュー一覧取得（会社ごとの評価を表示）</div>
+    </div>
+
+    <div class="card" style="margin-top: 0.8rem;">
+      <h4>クエリパラメータ</h4>
+      <ul>
+        <li><code>company_id</code> (uint, required): 対象会社ID</li>
+        <li><code>limit</code> (int): 取得件数（デフォルト: 10）</li>
+        <li><code>offset</code> (int): スキップ件数（デフォルト: 0）</li>
+        <li><code>sort</code> (string): ソート順（newest / oldest / rating_high / rating_low）</li>
+      </ul>
+
+      <h4>レスポンス例</h4>
+      <pre><code>{
+  "company": {
+    "id": 50,
+    "display_name": "ABC運送",
+    "rating_avg": 4.67,
+    "review_count": 15,
+    "rating_updated_at": "2026-03-20T12:00:00Z"
+  },
+  "distribution": {
+    "5": 10,
+    "4": 4,
+    "3": 1,
+    "2": 0,
+    "1": 0
+  },
+  "reviews": [
+    {
+      "id": 5001,
+      "reviewer_name": "配送太郎",
+      "rating": 5,
+      "comment": "丁寧な配送対応でした。次回もお願いしたいです！",
+      "created_at": "2026-03-20T15:30:00Z"
+    },
+    {
+      "id": 5000,
+      "reviewer_name": "荷主花子",
+      "rating": 4,
+      "comment": "良好。次回も利用したい。",
+      "created_at": "2026-03-19T10:00:00Z"
+    }
+  ],
+  "total": 15,
+  "limit": 10,
+  "offset": 0
+}</code></pre>
+    </div>
+
+    <!-- Rating Calculation -->
+    <h2>評価スコアの計算と更新</h2>
+    <div class="card">
+      <h3>計算式</h3>
+      <p>平均評価スコア（rating_avg）= SUM(rating) / COUNT(reviews)</p>
+      <p>例: (5 + 5 + 4 + 4 + 4) / 5 = 4.4</p>
+
+      <h3>更新タイミング</h3>
+      <ol>
+        <li>新規レビューが POST されたとき</li>
+        <li>トランザクション内で:
+          <ul>
+            <li>reviews テーブルに INSERT</li>
+            <li>rating_distribution を UPDATE</li>
+            <li>companies.rating_avg と companies.review_count を UPDATE</li>
+            <li>companies.rating_updated_at を現在時刻に UPDATE</li>
+          </ul>
+        </li>
+        <li>全てコミット、またはロールバック</li>
+      </ol>
+
+      <h3>パフォーマンス最適化</h3>
+      <ul>
+        <li><strong>キャッシュ戦略:</strong> Redis に <code>company:{id}:rating_avg</code> をキャッシュ。TTL = 1時間</li>
+        <li><strong>バッチ更新:</strong> リアルタイム計算ではなく、1時間ごとにバッチで再計算も検討</li>
+        <li><strong>分散トランザクション:</strong> companies テーブル更新が遅い場合、非同期 Worker で更新</li>
+      </ul>
+    </div>
+
+    <!-- Review Flow -->
+    <h2>レビュー投稿フロー</h2>
+    <div class="flow">
+      <pre>
+マッチング完了（status = completed, payment = succeeded）
+         ↓
+ユーザーAが「レビュー投稿」ボタンをクリック
+         ↓
+[バリデーション]
+① 本人が当事者か確認（reviewer_id = A）
+② マッチング状態 = completed か確認
+③ 決済成功か確認
+④ 既にレビュー済みか確認（UNIQUE 制約）
+⑤ 30日以内か確認
+         ↓
+バリデーション OK
+↓
+reviews テーブルに INSERT
+↓
+companies.rating_avg / review_count / rating_updated_at を UPDATE
+↓
+キャッシュをクリア（Redis の {company}:rating_avg を削除）
+↓
+201 Created で レスポンス返却
+↓
+フロントエンドで レビュー一覧を再フェッチ → 新しいスコアを表示
+      </pre>
+    </div>
+
+    <!-- Review Immutability -->
+    <h2>レビューの編集・削除</h2>
+    <div class="card">
+      <h3>基本ポリシー</h3>
+      <p>レビューは投稿後、<strong>編集・削除できない</strong>（不変性）。</p>
+
+      <h3>理由</h3>
+      <ul>
+        <li>会社の信頼スコアの操作防止</li>
+        <li>評価履歴の完全性と監査対応</li>
+        <li>荒らし行為の防止（投稿→削除→投稿 の繰り返し）</li>
+      </ul>
+
+      <h3>削除が必要な場合</h3>
+      <ol>
+        <li><strong>不適切コンテンツ（誹謗中傷など）:</strong> Admin が レビュー ID で検索し、comment を <code>"[削除済み - 不適切なコンテンツ]"</code> に置き換え。rating は変更しない</li>
+        <li><strong>誤投稿:</strong> Admin パネルで論理削除フラグを立てるが、統計には含まない</li>
+      </ol>
+    </div>
+
+    <!-- Admin Panel -->
+    <h2>管理画面での操作</h2>
+    <div class="card">
+      <h3>管理者（Admin）が利用可能な操作</h3>
+      <ul>
+        <li><strong>レビュー一覧表示:</strong> 全レビューを時系列で表示</li>
+        <li><strong>不適切コンテンツ削除:</strong> comment フィールドを削除済みメッセージに置き換え</li>
+        <li><strong>偽装レビュー検出:</strong> 同じユーザーが短時間に複数投稿、など疑わしいパターンをフラグ</li>
+        <li><strong>会社のスコア再計算:</strong> 手動で rating_avg を再計算（データ修復用）</li>
+      </ul>
+
+      <h3>ユーザーが利用可能な操作</h3>
+      <ul>
+        <li><strong>投稿:</strong> 条件を満たしていれば投稿可能</li>
+        <li><strong>閲覧:</strong> 全てのレビューを閲覧可能</li>
+        <li><strong>編集・削除:</strong> 不可</li>
+      </ul>
+    </div>
+
+    <!-- Example Scenario -->
+    <h2>実装例シナリオ</h2>
+    <div class="card">
+      <h3>シナリオ: 運送会社A → 運送会社Bへの配送（マッチング）</h3>
+      <ol>
+        <li>配送会社A と 配送会社B がマッチング（match_id = 1000）</li>
+        <li>配送完了 → マッチング status = <code>completed</code></li>
+        <li>配送会社A が配送会社B を評価: ★5 + コメント投稿</li>
+        <li>レビュー INSERT:
+          <pre><code>INSERT INTO reviews (match_id, reviewer_id, reviewee_company_id, rating, comment)
+VALUES (1000, 100, 200, 5, "プロフェッショナルな対応でした")</code></pre>
+        </li>
+        <li>companies テーブル更新:
+          <pre><code>UPDATE companies
+SET rating_avg = 4.67, review_count = 15, rating_updated_at = NOW()
+WHERE id = 200</code></pre>
+        </li>
+        <li>フロントエンド表示:
+          <pre><code>配送会社B
+★★★★★ 4.67 (15件のレビュー)
+最近の評価: "プロフェッショナルな対応でした"</code></pre>
+        </li>
+      </ol>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Delivery Platform Feature Specs — Last updated: 2026-03-20</p>
+  </footer>
+</body>
+</html>

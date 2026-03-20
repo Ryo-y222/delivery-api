@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>配車区間 (Trip Leg) - 機能仕様</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .ascii-container { background: #f5f5f5; border: 1px solid #ddd; padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 1rem 0; }
+    .matching-rule { background: var(--success-light); border-left: 4px solid var(--success); padding: 1rem; margin: 1rem 0; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>配車区間 (Trip Leg) 機能仕様書</h1>
+      <nav>
+        <a href="index.html">ドキュメント</a>
+        <a href="dispatch-plan.html">配車計画</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">ドキュメント</a> / 配車区間
+    </div>
+
+    <!-- Overview -->
+    <section>
+      <h2>概要</h2>
+      <p>配車区間 (Trip Leg) は、配送プラットフォームのマッチングエンジンの<strong>中核</strong です。1つの出発地から目的地への単一区間を表現し、マッチング対象となる「空車状態で次の荷物を探索中」の運送能力を定義します。</p>
+      <div class="card">
+        <h3>Trip Legの役割</h3>
+        <ul>
+          <li><strong>運行単位の最小粒度</strong>: 地理的・時間的な単一セグメント</li>
+          <li><strong>マッチング対象の定義</strong>: cargo_status と visibility の組み合わせで、誰がこの輸送能力を利用できるかを決定</li>
+          <li><strong>経路情報の保持</strong>: Google Routes API による詳細なステップ情報</li>
+          <li><strong>位置追跡対象</strong>: 各TripLegの進捗をリアルタイムに監視</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Database Schema -->
+    <section>
+      <h2>データベーススキーマ</h2>
+      <h3>trip_legs テーブル</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>制約</th>
+            <th>説明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>BIGINT</td>
+            <td>PRIMARY KEY</td>
+            <td>配車区間ID</td>
+          </tr>
+          <tr>
+            <td><code>dispatch_plan_id</code></td>
+            <td>BIGINT</td>
+            <td>NOT NULL, FK</td>
+            <td>配車計画ID (dispatch_plans.id)</td>
+          </tr>
+          <tr>
+            <td><code>leg_order</code></td>
+            <td>INT</td>
+            <td>NOT NULL</td>
+            <td>運行順序 (1, 2, 3, ...)</td>
+          </tr>
+          <tr>
+            <td><code>origin_address</code></td>
+            <td>VARCHAR(255)</td>
+            <td>NOT NULL</td>
+            <td>出発地住所</td>
+          </tr>
+          <tr>
+            <td><code>origin_lat</code></td>
+            <td>DECIMAL(10,7)</td>
+            <td>NOT NULL</td>
+            <td>出発地緯度</td>
+          </tr>
+          <tr>
+            <td><code>origin_lng</code></td>
+            <td>DECIMAL(10,7)</td>
+            <td>NOT NULL</td>
+            <td>出発地経度</td>
+          </tr>
+          <tr>
+            <td><code>dest_address</code></td>
+            <td>VARCHAR(255)</td>
+            <td>NOT NULL</td>
+            <td>目的地住所</td>
+          </tr>
+          <tr>
+            <td><code>dest_lat</code></td>
+            <td>DECIMAL(10,7)</td>
+            <td>NOT NULL</td>
+            <td>目的地緯度</td>
+          </tr>
+          <tr>
+            <td><code>dest_lng</code></td>
+            <td>DECIMAL(10,7)</td>
+            <td>NOT NULL</td>
+            <td>目的地経度</td>
+          </tr>
+          <tr>
+            <td><code>departure_at</code></td>
+            <td>TIMESTAMP</td>
+            <td>NOT NULL</td>
+            <td>予定出発時刻</td>
+          </tr>
+          <tr>
+            <td><code>arrival_at</code></td>
+            <td>TIMESTAMP</td>
+            <td>NOT NULL</td>
+            <td>予定到着時刻</td>
+          </tr>
+          <tr>
+            <td><code>leg_type</code></td>
+            <td>VARCHAR(20)</td>
+            <td>NOT NULL</td>
+            <td>区間型 (outbound/return)</td>
+          </tr>
+          <tr>
+            <td><code>cargo_status</code></td>
+            <td>VARCHAR(20)</td>
+            <td>NOT NULL</td>
+            <td>荷物状態 (loaded/empty_seeking/empty_private)</td>
+          </tr>
+          <tr>
+            <td><code>cargo_description</code></td>
+            <td>VARCHAR(500)</td>
+            <td>NULL</td>
+            <td>荷物の説明 (outbound時)</td>
+          </tr>
+          <tr>
+            <td><code>cargo_weight</code></td>
+            <td>DECIMAL(10,2)</td>
+            <td>NULL</td>
+            <td>積荷重量 (kg)</td>
+          </tr>
+          <tr>
+            <td><code>available_weight</code></td>
+            <td>DECIMAL(10,2)</td>
+            <td>NOT NULL</td>
+            <td>利用可能積載量 (kg)</td>
+          </tr>
+          <tr>
+            <td><code>price</code></td>
+            <td>DECIMAL(10,2)</td>
+            <td>NULL</td>
+            <td>輸送料金 (円)</td>
+          </tr>
+          <tr>
+            <td><code>visibility</code></td>
+            <td>VARCHAR(20)</td>
+            <td>NOT NULL, DEFAULT 'private'</td>
+            <td>公開範囲 (private/company_only/public)</td>
+          </tr>
+          <tr>
+            <td><code>route_polyline</code></td>
+            <td>TEXT</td>
+            <td>NULL</td>
+            <td>地図用経路ポリライン (encoded polyline)</td>
+          </tr>
+          <tr>
+            <td><code>route_duration_sec</code></td>
+            <td>INT</td>
+            <td>NULL</td>
+            <td>推定所要時間 (秒)</td>
+          </tr>
+          <tr>
+            <td><code>route_steps_json</code></td>
+            <td>MEDIUMTEXT</td>
+            <td>NULL</td>
+            <td>Google Routes APIの詳細ステップ (JSON形式)</td>
+          </tr>
+          <tr>
+            <td><code>delay_minutes</code></td>
+            <td>INT</td>
+            <td>DEFAULT 0</td>
+            <td>予定との遅延時間 (分)</td>
+          </tr>
+          <tr>
+            <td><code>status</code></td>
+            <td>VARCHAR(20)</td>
+            <td>NOT NULL, DEFAULT 'scheduled'</td>
+            <td>進捗状態 (scheduled/in_transit/completed/cancelled)</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>TIMESTAMP</td>
+            <td>NOT NULL, DEFAULT CURRENT_TIMESTAMP</td>
+            <td>作成日時</td>
+          </tr>
+          <tr>
+            <td><code>updated_at</code></td>
+            <td>TIMESTAMP</td>
+            <td>NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP</td>
+            <td>更新日時</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>インデックス戦略</h3>
+      <pre><code>-- マッチング検索の高速化（最重要）
+-- WHERE cargo_status='empty_seeking' AND visibility IN ('public','company_only')
+CREATE INDEX idx_trip_legs_matching ON trip_legs(visibility, cargo_status, status);
+
+-- 配車計画に属するTripLegの取得
+CREATE INDEX idx_trip_legs_dispatch_plan ON trip_legs(dispatch_plan_id, leg_order);
+
+-- 進捗追跡用
+CREATE INDEX idx_trip_legs_status ON trip_legs(status);
+
+-- 時間軸検索（特定期間の配車区間取得）
+CREATE INDEX idx_trip_legs_departure ON trip_legs(departure_at);
+CREATE INDEX idx_trip_legs_arrival ON trip_legs(arrival_at);</code></pre>
+    </section>
+
+    <!-- Cargo Status Explanation -->
+    <section>
+      <h2>荷物状態 (Cargo Status)</h2>
+      <p>TripLegの<code>cargo_status</code>は、この区間における車両の荷物積載状態を表し、マッチング可否を判定する最重要フィールドです。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>ステータス</th>
+            <th>説明</th>
+            <th>マッチング対象</th>
+            <th>用途例</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>loaded</code></td>
+            <td>既に荷物を積んでいる状態</td>
+            <td>❌ 対象外</td>
+            <td>配送計画の往路区間。この荷物は既に確定されているため、新たなマッチングは発生しない</td>
+          </tr>
+          <tr>
+            <td><code>empty_seeking</code></td>
+            <td>空車で次の荷物を探索中</td>
+            <td>✅ <strong>対象</strong></td>
+            <td>復路区間。この区間中、他の荷主からの積荷リクエストと照合される</td>
+          </tr>
+          <tr>
+            <td><code>empty_private</code></td>
+            <td>空車だが非公開（回送等）</td>
+            <td>❌ 対象外</td>
+            <td>営業所への回送。マッチング対象にしない重要な私有運行</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="matching-rule">
+        <h4>マッチング条件</h4>
+        <p>マッチングエンジンが照合するTripLegの条件:</p>
+        <pre><code>WHERE cargo_status = 'empty_seeking'
+  AND visibility IN ('public', 'company_only')
+  AND status = 'scheduled'
+  AND departure_at > NOW()
+  AND available_weight >= required_weight</code></pre>
+      </div>
+    </section>
+
+    <!-- Visibility Explanation -->
+    <section>
+      <h2>公開範囲 (Visibility)</h2>
+      <p><code>visibility</code>フィールドは、このTripLegを誰がマッチング対象として見られるかを制御します。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>レベル</th>
+            <th>説明</th>
+            <th>見える対象</th>
+            <th>マッチング対象</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>private</code></td>
+            <td>非公開（自社運行のみ）</td>
+            <td>当該企業の管理者のみ</td>
+            <td>❌ 対象外</td>
+          </tr>
+          <tr>
+            <td><code>company_only</code></td>
+            <td>同一企業内のみ公開</td>
+            <td>同じcompany_idを持つ他の利用者</td>
+            <td>✅ 企業内マッチング用</td>
+          </tr>
+          <tr>
+            <td><code>public</code></td>
+            <td>完全公開</td>
+            <td>全プラットフォーム利用者</td>
+            <td>✅ オープンマッチング用</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Leg Type -->
+    <section>
+      <h2>区間型 (Leg Type)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>型</th>
+            <th>説明</th>
+            <th>cargo_status</th>
+            <th>マッチング</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>outbound</code></td>
+            <td>往路（配送地への移動）</td>
+            <td>通常は<code>loaded</code></td>
+            <td>❌ 対象外</td>
+          </tr>
+          <tr>
+            <td><code>return</code></td>
+            <td>復路（配送地からの移動）</td>
+            <td><code>empty_seeking</code>または<code>empty_private</code></td>
+            <td>status次第で可</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Route Data -->
+    <section>
+      <h2>経路データ</h2>
+      <div class="card">
+        <h3>route_polyline (TEXT)</h3>
+        <p>Google Maps Encoded Polyline形式の経路情報。フロントエンドで地図上に描画します。</p>
+        <pre><code>例: "_p~iF~ps|U_ulLnnqC_mqNvxq`@"</code></pre>
+      </div>
+      <div class="card">
+        <h3>route_duration_sec (INT)</h3>
+        <p>Google Routes APIが返す推定所要時間（秒）。到着予測時刻の計算に使用。</p>
+      </div>
+      <div class="card">
+        <h3>route_steps_json (MEDIUMTEXT)</h3>
+        <p><strong>Google Routes APIが返す詳細ステップをJSON形式で保存</strong></p>
+        <p>理由: Google Routes APIの各ステップ情報（「〇〇方向に進む」「右折」など）は量が多く、TEXTでは不足するため<code>MEDIUMTEXT</code>を使用。</p>
+        <pre><code>{
+  "steps": [
+    {
+      "startLocation": { "latitude": 35.4437, "longitude": 139.6380 },
+      "endLocation": { "latitude": 35.4450, "longitude": 139.6390 },
+      "polyline": { "encodedPolyline": "..." },
+      "distanceMeters": 150,
+      "duration": "12s",
+      "staticDuration": "12s",
+      "navigationInstruction": "Head south on Route 1",
+      "maneuver": "STRAIGHT"
+    },
+    ...
+  ]
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- API Endpoints -->
+    <section>
+      <h2>APIエンドポイント</h2>
+
+      <div class="endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/v1/trip-legs</span>
+        <div class="desc">新規配車区間を作成</div>
+        <h4>リクエストボディ</h4>
+        <pre><code>{
+  "dispatch_plan_id": 12345,
+  "leg_order": 1,
+  "origin_address": "神奈川県横浜市中区",
+  "origin_lat": 35.4437,
+  "origin_lng": 139.6380,
+  "dest_address": "神奈川県小田原市",
+  "dest_lat": 35.2633,
+  "dest_lng": 139.1640,
+  "departure_at": "2026-03-20T09:00:00Z",
+  "arrival_at": "2026-03-20T10:30:00Z",
+  "leg_type": "outbound",
+  "cargo_status": "loaded",
+  "cargo_description": "家電製品 32型テレビ",
+  "cargo_weight": 8.5,
+  "available_weight": 2900,
+  "price": null,
+  "visibility": "private",
+  "route_polyline": "_p~iF~ps|U...",
+  "route_duration_sec": 5400,
+  "route_steps_json": "{\"steps\": [...]}"
+}</code></pre>
+        <h4>レスポンス (201 Created)</h4>
+        <pre><code>{
+  "id": 50001,
+  "dispatch_plan_id": 12345,
+  "leg_order": 1,
+  "origin_address": "神奈川県横浜市中区",
+  "origin_lat": 35.4437,
+  "origin_lng": 139.6380,
+  "dest_address": "神奈川県小田原市",
+  "dest_lat": 35.2633,
+  "dest_lng": 139.1640,
+  "departure_at": "2026-03-20T09:00:00Z",
+  "arrival_at": "2026-03-20T10:30:00Z",
+  "leg_type": "outbound",
+  "cargo_status": "loaded",
+  "cargo_description": "家電製品 32型テレビ",
+  "cargo_weight": 8.5,
+  "available_weight": 2900,
+  "price": null,
+  "visibility": "private",
+  "status": "scheduled",
+  "created_at": "2026-03-20T08:00:00Z",
+  "updated_at": "2026-03-20T08:00:00Z"
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/v1/trip-legs/:id</span>
+        <div class="desc">配車区間の詳細を取得</div>
+        <h4>レスポンス (200 OK)</h4>
+        <pre><code>{
+  "id": 50001,
+  "dispatch_plan_id": 12345,
+  "leg_order": 1,
+  "origin_address": "神奈川県横浜市中区",
+  "origin_lat": 35.4437,
+  "origin_lng": 139.6380,
+  "dest_address": "神奈川県小田原市",
+  "dest_lat": 35.2633,
+  "dest_lng": 139.1640,
+  "departure_at": "2026-03-20T09:00:00Z",
+  "arrival_at": "2026-03-20T10:30:00Z",
+  "leg_type": "outbound",
+  "cargo_status": "loaded",
+  "cargo_weight": 8.5,
+  "available_weight": 2900,
+  "price": null,
+  "visibility": "private",
+  "route_polyline": "_p~iF~ps|U...",
+  "route_duration_sec": 5400,
+  "delay_minutes": 0,
+  "status": "in_transit",
+  "created_at": "2026-03-20T08:00:00Z",
+  "updated_at": "2026-03-20T09:15:00Z"
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-put">PUT</span>
+        <span class="path">/api/v1/trip-legs/:id</span>
+        <div class="desc">配車区間を更新（ステータスや位置情報）</div>
+        <h4>リクエストボディ</h4>
+        <pre><code>{
+  "status": "completed",
+  "delay_minutes": 2,
+  "available_weight": 2850
+}</code></pre>
+        <h4>レスポンス (200 OK)</h4>
+        <pre><code>{
+  "id": 50001,
+  "dispatch_plan_id": 12345,
+  "leg_order": 1,
+  "status": "completed",
+  "delay_minutes": 2,
+  "available_weight": 2850,
+  "updated_at": "2026-03-20T10:32:00Z"
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/v1/trip-legs/search</span>
+        <div class="desc">公開マッチング対象のTripLegを検索</div>
+        <h4>クエリパラメータ</h4>
+        <pre><code>?visibility=public&cargo_status=empty_seeking&status=scheduled
+?origin_lat=35.3&origin_lng=139.6&radius_km=50
+?departure_after=2026-03-20T10:00:00Z&departure_before=2026-03-20T16:00:00Z
+?min_available_weight=500</code></pre>
+        <h4>レスポンス (200 OK)</h4>
+        <pre><code>{
+  "trip_legs": [
+    {
+      "id": 50002,
+      "dispatch_plan_id": 12345,
+      "leg_order": 2,
+      "origin_address": "神奈川県小田原市",
+      "origin_lat": 35.2633,
+      "origin_lng": 139.1640,
+      "dest_address": "神奈川県横浜市中区",
+      "dest_lat": 35.4437,
+      "dest_lng": 139.6380,
+      "departure_at": "2026-03-20T10:45:00Z",
+      "arrival_at": "2026-03-20T12:15:00Z",
+      "leg_type": "return",
+      "cargo_status": "empty_seeking",
+      "available_weight": 2900,
+      "price": 8500,
+      "visibility": "public",
+      "route_polyline": "_p~iF~ps|U...",
+      "route_duration_sec": 5400,
+      "status": "scheduled"
+    }
+  ],
+  "total": 1
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-delete">DELETE</span>
+        <span class="path">/api/v1/trip-legs/:id</span>
+        <div class="desc">配車区間をキャンセル</div>
+        <h4>レスポンス (204 No Content)</h4>
+        <pre><code>(なし - 正常削除を示すHTTP 204)</code></pre>
+      </div>
+    </section>
+
+    <!-- Data Flow: From Creation to Matching -->
+    <section>
+      <h2>データフロー：作成からマッチングまで</h2>
+      <div class="ascii-container">
+        <pre>ステップ1: TripLegを作成
+┌──────────────────────────────────────────────────┐
+│ POST /api/v1/trip-legs                           │
+│ {                                                │
+│   dispatch_plan_id: 12345,                       │
+│   leg_order: 2,                                  │
+│   origin_address: "小田原",                       │
+│   dest_address: "横浜",                          │
+│   leg_type: "return",                            │
+│   cargo_status: "empty_seeking",                 │
+│   visibility: "public",                          │
+│   status: "scheduled"                            │
+│ }                                                │
+└──────────────────────────────────────────────────┘
+            │
+            ▼
+ステップ2: マッチングエンジンがこのTripLegを検出
+┌──────────────────────────────────────────────────┐
+│ SELECT * FROM trip_legs                          │
+│ WHERE cargo_status = 'empty_seeking'             │
+│   AND visibility IN ('public', 'company_only')   │
+│   AND status = 'scheduled'                       │
+│   AND departure_at > NOW()                       │
+│   AND available_weight >= required_weight        │
+│                                                  │
+│ → マッチング対象として認識される                  │
+└──────────────────────────────────────────────────┘
+            │
+            ▼
+ステップ3: 荷主の配送依頼と照合
+┌──────────────────────────────────────────────────┐
+│ 配送依頼:                                         │
+│  - 出発: 小田原市 (35.26°N, 139.16°E)           │
+│  - 到着: 横浜市 (35.44°N, 139.64°E)             │
+│  - 荷物重量: 500kg                               │
+│  - 時間枠: 10:45-12:15                           │
+│                                                  │
+│ → このTripLegと完全にマッチング ✓               │
+└──────────────────────────────────────────────────┘
+            │
+            ▼
+ステップ4: マッチング成立
+┌──────────────────────────────────────────────────┐
+│ 配送依頼を この復路区間(Leg2)に割り当て         │
+│ → cargo_status: empty_seeking → loaded に変更    │
+│ → available_weight: 2900 → 2400 に更新           │
+│ → visibility: public → company_only に制限        │
+│ → マッチング対象から外れる                        │
+└──────────────────────────────────────────────────┘
+            │
+            ▼
+ステップ5: 運行・配送実行
+┌──────────────────────────────────────────────────┐
+│ ドライバーが小田原から横浜へ運行実行             │
+│ status: scheduled → in_transit → completed      │
+└──────────────────────────────────────────────────┘</pre>
+      </div>
+    </section>
+
+    <!-- Matching Example -->
+    <section>
+      <h2>マッチング実例</h2>
+      <p>以下の図は、トラック③の復路区間が複数の配送依頼とどのように照合されるかを示します。</p>
+      <div class="ascii-container">
+        <pre>配車計画: トラック③ × 2026-03-20
+
+Leg 1 (往路)
+┌─────────────────────────────────┐
+│ 横浜 → 小田原                   │
+│ cargo_status: loaded            │
+│ (既に積荷あり → マッチング対象外) │
+└─────────────────────────────────┘
+
+Leg 2 (復路)
+┌─────────────────────────────────────────┐
+│ 小田原 → 横浜                           │
+│ cargo_status: empty_seeking ← 重要      │
+│ visibility: public                      │
+│ departure_at: 10:45                     │
+│ available_weight: 2900kg                │
+│                                         │
+│ ✅ マッチング対象となる                  │
+└─────────────────────────────────────────┘
+           │
+       ┌───┴────┬─────────┐
+       ▼        ▼         ▼
+   配送依頼A  配送依頼B  配送依頼C
+  (小田原市)  (小田原市) (別地点)
+  500kg      1000kg     3000kg
+  10:50      11:30      11:00
+     │          │          │
+     ✓         ✓          ✗
+   マッチ!   マッチ!   距離外でNG
+
+配送依頼Aと B が割り当てられ、
+Leg 2は 1500kg の配送を実行</pre>
+      </div>
+    </section>
+
+    <!-- Indexing Strategy -->
+    <section>
+      <h2>インデックス戦略の詳細</h2>
+      <div class="card">
+        <h3>複合インデックス idx_trip_legs_matching</h3>
+        <p>マッチング検索のパフォーマンスを最適化するために、3つのカラムを結合したインデックスを使用します。</p>
+        <pre><code>CREATE INDEX idx_trip_legs_matching
+ON trip_legs(visibility, cargo_status, status);
+
+このインデックスにより、以下のクエリが高速化される:
+SELECT * FROM trip_legs
+WHERE visibility IN ('public', 'company_only')
+  AND cargo_status = 'empty_seeking'
+  AND status = 'scheduled';</code></pre>
+        <p>インデックスの列の順序は重要です。最初に<code>visibility</code>を指定することで、パブリック・コンパニー限定の迅速なフィルタリングが可能になります。</p>
+      </div>
+    </section>
+
+    <!-- Design Notes -->
+    <section>
+      <h2>設計ノート</h2>
+      <div class="card">
+        <h3>route_steps_json は MEDIUMTEXT</h3>
+        <p>Google Routes APIが返す詳細ステップ情報は大量のJSON構造を含むため、通常のTEXT型では不足する可能性があります。MEDIUMTEXTを使用することで、最大16MBまでの経路情報を保存できます。</p>
+      </div>
+      <div class="card">
+        <h3>cargo_status の3値設計</h3>
+        <p><code>loaded</code> / <code>empty_seeking</code> / <code>empty_private</code> の3つの状態により、マッチング対象性を明確に制御できます。これにより、営業所への回送（empty_private）とマッチング可能な空車（empty_seeking）を区別できます。</p>
+      </div>
+      <div class="card">
+        <h3>visibility と cargo_status の相互関係</h3>
+        <p>マッチング可能な条件は両方のフィールドに依存します。visibility だけでなく cargo_status も 'empty_seeking' である必要があり、その他の値では決してマッチング対象になりません。</p>
+      </div>
+      <div class="card">
+        <h3>delay_minutes の使用例</h3>
+        <p>実際の運行中に予定との差が生じた場合、<code>delay_minutes</code>を更新します。これにより到着予測の精度が向上し、次のマッチングの判定に活用できます。</p>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <p>配車区間 (Trip Leg) 仕様書 | 最終更新: 2026-03-20</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>決済仕様書 | デリバリーAPI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1>デリバリープラットフォーム API</h1>
+            <p class="subtitle">決済仕様書</p>
+        </div>
+    </header>
+
+    <nav class="breadcrumb">
+        <div class="container">
+            <a href="../index.html">ドキュメント</a>
+            <span class="separator">/</span>
+            <a href="index.html">仕様書</a>
+            <span class="separator">/</span>
+            <span class="current">決済</span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <section class="overview">
+            <h2>概要</h2>
+            <p>
+                決済機能は、マッチングが承認された後、荷主から配送事業者への支払いを処理するコア機能です。
+                Stripe PaymentIntent APIを使用して安全なクレジットカード決済を実現します。
+                決済完了後、自動的にマッチングのステータスを completed に更新し、配送フローを完結させます。
+            </p>
+        </section>
+
+        <section class="database-schema">
+            <h2>データベーススキーマ</h2>
+            <h3>payments テーブル</h3>
+            <table class="schema-table">
+                <thead>
+                    <tr>
+                        <th>カラム名</th>
+                        <th>型</th>
+                        <th>説明</th>
+                        <th>制約</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>id</td>
+                        <td>UUID</td>
+                        <td>決済レコードの一意識別子</td>
+                        <td>PRIMARY KEY</td>
+                    </tr>
+                    <tr>
+                        <td>match_id</td>
+                        <td>UUID</td>
+                        <td>対象となるマッチング要求のID</td>
+                        <td>NOT NULL, FOREIGN KEY</td>
+                    </tr>
+                    <tr>
+                        <td>payer_id</td>
+                        <td>UUID</td>
+                        <td>支払い者（荷主）のユーザーID</td>
+                        <td>NOT NULL, FOREIGN KEY</td>
+                    </tr>
+                    <tr>
+                        <td>amount</td>
+                        <td>INTEGER</td>
+                        <td>決済金額（最小単位：円）</td>
+                        <td>NOT NULL, CHECK (amount > 0)</td>
+                    </tr>
+                    <tr>
+                        <td>currency</td>
+                        <td>VARCHAR(3)</td>
+                        <td>通貨コード（ISO 4217）</td>
+                        <td>NOT NULL, DEFAULT 'jpy'</td>
+                    </tr>
+                    <tr>
+                        <td>stripe_payment_id</td>
+                        <td>VARCHAR(255)</td>
+                        <td>Stripe PaymentIntent ID</td>
+                        <td>UNIQUE, NOT NULL</td>
+                    </tr>
+                    <tr>
+                        <td>status</td>
+                        <td>ENUM</td>
+                        <td>決済ステータス</td>
+                        <td>pending | succeeded | failed | refunded</td>
+                    </tr>
+                    <tr>
+                        <td>paid_at</td>
+                        <td>TIMESTAMP</td>
+                        <td>決済完了日時</td>
+                        <td>NULLABLE</td>
+                    </tr>
+                    <tr>
+                        <td>created_at</td>
+                        <td>TIMESTAMP</td>
+                        <td>レコード作成日時</td>
+                        <td>NOT NULL</td>
+                    </tr>
+                    <tr>
+                        <td>updated_at</td>
+                        <td>TIMESTAMP</td>
+                        <td>レコード更新日時</td>
+                        <td>NOT NULL</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>データ型の重要な注意</h3>
+            <div class="important-section">
+                <h4>amount は INTEGER であることの理由</h4>
+                <p>
+                    決済金額は <strong>浮動小数点型（FLOAT/DECIMAL）ではなく INTEGER 型</strong> を使用します。
+                    理由は以下の通りです：
+                </p>
+                <ul>
+                    <li>
+                        <strong>浮動小数点の丸め誤差</strong>:
+                        浮動小数点演算では 0.1 + 0.2 ≠ 0.3 という問題が発生します。
+                        決済システムでの誤差は重大な問題となるため、整数値で金額を管理します。
+                    </li>
+                    <li>
+                        <strong>Stripeとの互換性</strong>:
+                        Stripe APIも金額を最小単位（日本円の場合は1円）の整数として扱います。
+                        データベースのデータ型を Stripe の形式に合わせることで、
+                        変換ロジックの簡潔性と正確性を確保します。
+                    </li>
+                </ul>
+                <p>
+                    <code>amount = 10000</code> は 10,000円を表します。
+                </p>
+            </div>
+
+            <h4>paid_at は TIMESTAMP NULLABLE である理由</h4>
+            <p>
+                <code>paid_at</code> は <code>*time.Time</code> (Goの NULL許可ポインタ型) としてNULLABLEです。
+                理由は、決済が完了していない状態（pending / failed）では、実際の支払い日時が存在しないためです。
+            </p>
+        </section>
+
+        <section class="status-flow">
+            <h2>決済ステータス</h2>
+
+            <h3>ステータス定義</h3>
+            <ul>
+                <li>
+                    <strong>pending</strong>: PaymentIntentが作成され、フロントエンドがカード情報をStripeに送信するのを待っている状態
+                </li>
+                <li>
+                    <strong>succeeded</strong>: 決済が正常に完了した状態。Stripe webhookで確認される
+                </li>
+                <li>
+                    <strong>failed</strong>: 決済が失敗した状態（カード拒否、有効期限切れ等）
+                </li>
+                <li>
+                    <strong>refunded</strong>: 一度完了した決済が払い戻された状態
+                </li>
+            </ul>
+
+            <h3>ステータス遷移図</h3>
+            <pre class="ascii-diagram">
+┌─────────┐
+│ pending │
+└────┬────┘
+     │
+     ├─→ succeeded ─→ refunded
+     │
+     └─→ failed
+
+【フロー】
+1. PaymentIntentを作成 → pending
+2. フロントエンドがカード情報をStripeに送信
+3. Stripe決済成功 ↔ webhook通知 → succeeded
+4. Stripe決済失敗 → webhook通知 → failed
+5. 払い戻し処理 → refunded
+            </pre>
+        </section>
+
+        <section class="stripe-integration">
+            <h2>Stripe PaymentIntent フロー</h2>
+
+            <h3>PaymentIntentの流れ</h3>
+            <ol>
+                <li>
+                    <strong>Backend: PaymentIntentを作成</strong>
+                    <br>
+                    マッチング承認時に、バックエンドが Stripe PaymentIntent API を呼び出して
+                    PaymentIntentを作成します。金額、通貨、メタデータが設定されます。
+                </li>
+                <li>
+                    <strong>Frontend: Stripe Card Form を表示</strong>
+                    <br>
+                    バックエンドから返されたclient_secretを使用して、
+                    フロントエンドがStripe Elements / Stripe.jsを用いたカード入力フォームを表示します。
+                </li>
+                <li>
+                    <strong>Frontend: カード情報をStripeに送信</strong>
+                    <br>
+                    ユーザーがカード情報を入力し、「支払う」ボタンをクリック。
+                    フロントエンドはこの情報を直接Stripeサーバーに送信します（バックエンドを経由しない）。
+                </li>
+                <li>
+                    <strong>Stripe: 決済処理を実行</strong>
+                    <br>
+                    Stripeがカード決済を処理し、成功または失敗の結果を確定します。
+                </li>
+                <li>
+                    <strong>Stripe: Webhookで通知</strong>
+                    <br>
+                    決済結果が確定したら、Stripeはバックエンドのwebhookエンドポイントに
+                    payment_intent.succeeded または payment_intent.payment_failed イベントを送信します。
+                </li>
+                <li>
+                    <strong>Backend: DBを更新し、マッチングを完了</strong>
+                    <br>
+                    webhookで成功を確認したら、paymentsテーブルのステータスを succeeded に更新。
+                    同時に、対応するマッチングのステータスを completed に更新します。
+                </li>
+            </ol>
+
+            <h3>インタラクション図</h3>
+            <pre class="ascii-diagram">
+┌──────────┐          ┌──────────┐          ┌──────────┐
+│ Frontend │          │ Backend  │          │ Stripe   │
+└────┬─────┘          └────┬─────┘          └────┬─────┘
+     │                     │                     │
+     │  1. 決済画面表示    │                     │
+     │◄────────────────────│                     │
+     │                     │                     │
+     │                     │ 2. PaymentIntent   │
+     │                     │    作成を指示        │
+     │                     │──────────────────────>│
+     │                     │                     │
+     │                     │ 3. PaymentIntent   │
+     │                     │    返却            │
+     │                     │◄──────────────────────│
+     │                     │                     │
+     │ 4. client_secret受取│                     │
+     │◄────────────────────│                     │
+     │                     │                     │
+     │ 5. カード情報入力    │                     │
+     │ & 支払ボタンクリック │                     │
+     │                     │                     │
+     │ 6. カード情報をStripeに送信                │
+     │─────────────────────────────────────────────>│
+     │                     │                     │
+     │                     │                     │ 7. 決済処理実行
+     │                     │                     │
+     │                     │ 8. Webhook通知      │
+     │                     │    (succeeded/failed)
+     │                     │◄──────────────────────│
+     │                     │                     │
+     │ 9. 決済完了画面表示 │                     │
+     │◄────────────────────│                     │
+     │                     │                     │
+     │                     │ 10. DB更新          │
+     │                     │     (status完了)   │
+     │                     │                     │
+            </pre>
+        </section>
+
+        <section class="webhook-handling">
+            <h2>Webhook ハンドリング</h2>
+
+            <h3>Webhookエンドポイント</h3>
+            <p class="method">POST /api/v1/webhooks/stripe</p>
+
+            <h3>対象イベント</h3>
+            <table class="webhook-table">
+                <thead>
+                    <tr>
+                        <th>イベント名</th>
+                        <th>説明</th>
+                        <th>処理内容</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>payment_intent.succeeded</code></td>
+                        <td>決済が成功した</td>
+                        <td>
+                            1. payments テーブルの status を succeeded に更新<br>
+                            2. paid_at に現在時刻を記録<br>
+                            3. 対応するマッチングの status を completed に更新<br>
+                            4. メール通知を配信
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><code>payment_intent.payment_failed</code></td>
+                        <td>決済が失敗した</td>
+                        <td>
+                            1. payments テーブルの status を failed に更新<br>
+                            2. 失敗原因をログに記録<br>
+                            3. ユーザーに失敗通知メールを送信<br>
+                            4. マッチングのステータスは payment_pending のまま保持<br>
+                               （ユーザーが再度決済を試みることが可能）
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Webhook署名検証</h3>
+            <p>
+                セキュリティのため、Stripeからのwebhook通知は <strong>必ず署名を検証</strong> する必要があります。
+            </p>
+            <pre class="code-block">
+【署名検証の手順】
+1. Webhook リクエストの body（生のバイナリ）を取得
+2. リクエストヘッダーから署名情報を抽出
+   - Stripe-Signature ヘッダー
+   - フォーマット: t=タイムスタンプ,v1=署名値,...
+3. バックエンドで同じアルゴリズムを用いて署名を再計算
+4. リクエストの署名と再計算署名を比較
+5. 一致すればStripeからの正規なリクエストと確認
+
+【理由】
+未検証のwebhookを受け入れると、攻撃者が偽装の決済完了通知を送信でき、
+決済なしでマッチングが完了してしまう危険があります。
+            </pre>
+
+            <h4>署名検証に使用するシークレット</h4>
+            <p>
+                Stripe ダッシュボードから取得した <strong>Webhook Signing Secret</strong> を使用します。
+                このシークレットは環境変数 <code>STRIPE_WEBHOOK_SECRET</code> として安全に管理してください。
+            </p>
+        </section>
+
+        <section class="api-endpoints">
+            <h2>API エンドポイント</h2>
+
+            <div class="endpoint">
+                <h3>PaymentIntentを作成</h3>
+                <p class="method">POST /api/v1/payments/create-intent</p>
+                <p class="description">
+                    マッチング承認後、支払い者がPaymentIntentを作成してフロントエンドで決済フォームを表示するために必要です。
+                </p>
+
+                <h4>リクエストボディ</h4>
+                <pre class="json-block">
+{
+  "match_id": "uuid",
+  "payer_id": "uuid",
+  "amount": 10000,
+  "currency": "jpy"
+}
+                </pre>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="json-block">
+{
+  "payment_id": "uuid",
+  "client_secret": "pi_xxxx_secret_yyyy",
+  "stripe_payment_id": "pi_xxxx",
+  "amount": 10000,
+  "currency": "jpy",
+  "status": "pending"
+}
+                </pre>
+
+                <h4>エラーレスポンス (400 Bad Request)</h4>
+                <pre class="json-block">
+{
+  "error": "Invalid match status",
+  "details": "マッチングが approved ステータスではありません"
+}
+                </pre>
+            </div>
+
+            <div class="endpoint">
+                <h3>Stripe Webhook 受信エンドポイント</h3>
+                <p class="method">POST /api/v1/webhooks/stripe</p>
+                <p class="description">
+                    Stripeから決済結果の通知を受け取り、データベースを更新します。
+                    <strong>このエンドポイントは認証を必要としません</strong>（代わりに署名で検証）。
+                </p>
+
+                <h4>リクエストヘッダー</h4>
+                <pre class="code-block">
+Content-Type: application/json
+Stripe-Signature: t=1614556800,v1=7c6f5eff7f6b8c9d0e1f2a3b4c5d6e7f
+                </pre>
+
+                <h4>リクエストボディ例</h4>
+                <pre class="json-block">
+{
+  "type": "payment_intent.succeeded",
+  "data": {
+    "object": {
+      "id": "pi_xxxx",
+      "amount": 10000,
+      "currency": "jpy",
+      "status": "succeeded",
+      "metadata": {
+        "match_id": "uuid",
+        "payer_id": "uuid"
+      }
+    }
+  }
+}
+                </pre>
+
+                <h4>レスポンス (200 OK)</h4>
+                <pre class="json-block">
+{
+  "received": true
+}
+                </pre>
+
+                <h4>エラーレスポンス (400 Bad Request / 401 Unauthorized)</h4>
+                <pre class="json-block">
+{
+  "error": "Invalid signature"
+}
+                </pre>
+            </div>
+        </section>
+
+        <section class="data-flow">
+            <h2>決済フロー全体図</h2>
+
+            <pre class="ascii-diagram">
+[マッチング承認]
+      │
+      ▼
+┌────────────────────────────────────────┐
+│ ① PaymentIntent を作成                  │
+│    POST /api/v1/payments/create-intent │
+│    → client_secret 取得                │
+└────────────┬───────────────────────────┘
+             │
+             ▼
+┌────────────────────────────────────────┐
+│ ② フロントエンド：Stripe Card Form表示 │
+│    client_secret でカード入力フォーム   │
+│    を初期化                             │
+└────────────┬───────────────────────────┘
+             │
+             ▼
+┌────────────────────────────────────────┐
+│ ③ ユーザー：カード情報を入力＆送信     │
+│    フロントエンドが直接Stripeに送信    │
+│    （バックエンドを経由しない）        │
+└────────────┬───────────────────────────┘
+             │
+             ▼
+┌────────────────────────────────────────┐
+│ ④ Stripe：決済処理                      │
+│    カード照合・認証・決済実行           │
+└────────────┬───────────────────────────┘
+             │
+     ┌───────┴───────┐
+     │               │
+     ▼ 成功         ▼ 失敗
+┌─────────────┐  ┌──────────┐
+│ succeeded   │  │ failed   │
+└──────┬──────┘  └────┬─────┘
+       │              │
+       ▼              ▼
+[webhook: payment_intent.succeeded]
+[webhook: payment_intent.payment_failed]
+       │              │
+       ▼              ▼
+   ┌────────┐    ┌────────┐
+   │DB更新  │    │DB更新  │
+   │status: │    │status: │
+   │succeeded    │failed  │
+   └────┬───┘    └───┬────┘
+        │            │
+        ▼            ▼
+   ┌──────────┐  ┌──────────────┐
+   │Match完了 │  │再決済を待機  │
+   │status:  │  │（可能）      │
+   │completed│  └──────────────┘
+   └──────────┘
+            </pre>
+
+            <h3>フロー説明</h3>
+            <ol>
+                <li>マッチングが承認されたら、バックエンドがPaymentIntentを作成</li>
+                <li>フロントエンドが client_secret を使用してStripe Card Formを初期化</li>
+                <li>ユーザーがカード情報を入力し、フロントエンドがStripeに直接送信</li>
+                <li>Stripeが決済を処理し、成功/失敗を確定</li>
+                <li>Stripeがバックエンドにwebhookで通知</li>
+                <li>バックエンドがwebhookの署名を検証してから、DBを更新</li>
+                <li>成功時：マッチングを completed に更新、ユーザーに完了通知</li>
+                <li>失敗時：ステータスは payment_pending のまま、ユーザーは再試行可能</li>
+            </ol>
+        </section>
+
+        <section class="security-considerations">
+            <h2>セキュリティ考慮事項</h2>
+
+            <h3>1. PCI DSS コンプライアンス</h3>
+            <ul>
+                <li>
+                    <strong>カード情報は絶対にバックエンドで扱わない</strong>:
+                    Stripe.jsを使用してカード情報をフロントエンドから直接Stripeに送信します。
+                    バックエンド経由でカード情報が通過しないため、PCI DSSの適用範囲外となります。
+                </li>
+                <li>
+                    ログにも決済情報の詳細は記録しません。stripe_payment_idのみ記録。
+                </li>
+            </ul>
+
+            <h3>2. Webhook署名検証</h3>
+            <ul>
+                <li>
+                    すべてのStripeからのwebhookは <strong>必ず署名を検証</strong> してください。
+                </li>
+                <li>
+                    攻撃者が偽装webhookを送信することで、決済なしでマッチングが完了する攻撃を防止します。
+                </li>
+                <li>
+                    検証失敗時は通知を拒否し、エラーログに記録してください。
+                </li>
+            </ul>
+
+            <h3>3. IdempotencyとDuplicate Prevention</h3>
+            <ul>
+                <li>
+                    同じPaymentIntentの複数回の webhook受信に備えて、
+                    DB更新時にidempotent（冪等）な処理を実装してください。
+                </li>
+                <li>
+                    例: ステータスが既に succeeded なら、再度更新しない
+                </li>
+            </ul>
+
+            <h3>4. HTTPS通信</h3>
+            <ul>
+                <li>
+                    すべてのAPI通信はHTTPS経由で行い、中間者攻撃を防止してください。
+                </li>
+                <li>
+                    webhookエンドポイントはHTTPではなくHTTPSで公開してください。
+                </li>
+            </ul>
+
+            <h3>5. 環境変数管理</h3>
+            <ul>
+                <li>
+                    <code>STRIPE_SECRET_KEY</code> と <code>STRIPE_WEBHOOK_SECRET</code> は
+                    本番環境で環境変数として安全に管理してください。
+                </li>
+                <li>
+                    ソースコードに直接記述しないでください。
+                </li>
+            </ul>
+        </section>
+
+        <section class="important-notes">
+            <h2>重要な注意点</h2>
+            <ul>
+                <li>
+                    <strong>金額は整数で管理</strong>:
+                    浮動小数点の丸め誤差を避けるため、金額は常に整数（円単位）で扱います。
+                    10,000円は amount = 10000 です。
+                </li>
+                <li>
+                    <strong>paid_at はNULL可能</strong>:
+                    決済完了まで paid_at は NULL です。
+                    succeeded ステータス確認後に、webhookで更新されます。
+                </li>
+                <li>
+                    <strong>payment_pending は必須</strong>:
+                    マッチングが approved → payment_pending → completed の流れを厳密に遵守してください。
+                </li>
+                <li>
+                    <strong>Webhook署名検証は必須</strong>:
+                    webhookの署名検証なしに処理を進めると、セキュリティが大きく損なわれます。
+                </li>
+                <li>
+                    <strong>インターネット通信の遅延を考慮</strong>:
+                    webhookが届く前にユーザーが画面をリロードしても、最終的には
+                    webhookで状態が確定するため、フロントエンドはポーリングまたは
+                    Real-time通知で最新状態を取得してください。
+                </li>
+            </ul>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 デリバリープラットフォーム. All rights reserved.</p>
+            <p class="last-updated">最終更新: 2026年3月20日</p>
+        </div>
+    </footer>
+</body>
+</html>
