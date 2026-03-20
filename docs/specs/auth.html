@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>認証機能 - delivery-api 仕様書</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>delivery-api 仕様書</h1>
+      <nav>
+        <a href="index.html">← インデックスへ</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">ホーム</a> / <span>認証機能仕様</span>
+    </div>
+
+    <!-- Overview -->
+    <h2>認証機能 (Authentication)</h2>
+    <div class="card">
+      <h3>概要</h3>
+      <p>delivery-api の認証機能は、ユーザー登録、ログイン、ログアウト、セッション管理を担当します。配送マッチングプラットフォームのすべてのユーザー（オーナー、ディスパッチャー、ドライバー、荷主、管理者）が安全に認証・認可される仕組みを提供します。</p>
+      <p style="margin-top: 1rem;"><strong>主な特徴:</strong></p>
+      <ul>
+        <li>JWT トークンベースの認証</li>
+        <li>HTTP-only Cookie によるトークン保存</li>
+        <li>リフレッシュトークンによるセッション管理</li>
+        <li>bcrypt によるパスワード暗号化</li>
+        <li>ユーザー列挙攻撃への対策</li>
+        <li>3層アーキテクチャ (ハンドラー → サービス → リポジトリ)</li>
+      </ul>
+    </div>
+
+    <!-- DB Schema -->
+    <h2>データベーススキーマ</h2>
+    <div class="card">
+      <h3>users テーブル</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>カラム名</th>
+            <th>型</th>
+            <th>説明</th>
+            <th>制約</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>uint (PK)</td>
+            <td>ユーザーID</td>
+            <td>PRIMARY KEY, AUTO_INCREMENT</td>
+          </tr>
+          <tr>
+            <td><code>company_id</code></td>
+            <td>uint (FK, NULL)</td>
+            <td>所属企業ID</td>
+            <td>FOREIGN KEY to companies, 管理者は NULL</td>
+          </tr>
+          <tr>
+            <td><code>email</code></td>
+            <td>varchar(255)</td>
+            <td>メールアドレス</td>
+            <td>UNIQUE, NOT NULL</td>
+          </tr>
+          <tr>
+            <td><code>password_hash</code></td>
+            <td>varchar(72)</td>
+            <td>bcrypt ハッシュ化パスワード</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><code>name</code></td>
+            <td>varchar(100)</td>
+            <td>ユーザー名</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><code>role</code></td>
+            <td>enum</td>
+            <td>ユーザーロール</td>
+            <td>owner / dispatcher / driver / shipper / admin</td>
+          </tr>
+          <tr>
+            <td><code>phone</code></td>
+            <td>varchar(20)</td>
+            <td>電話番号</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><code>is_active</code></td>
+            <td>bool</td>
+            <td>アクティブ状態</td>
+            <td>DEFAULT true</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td>timestamp</td>
+            <td>作成日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP</td>
+          </tr>
+          <tr>
+            <td><code>updated_at</code></td>
+            <td>timestamp</td>
+            <td>更新日時</td>
+            <td>DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- User Roles -->
+    <div class="card">
+      <h3>ユーザーロール一覧</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>ロール</th>
+            <th>説明</th>
+            <th>company_id</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>owner</strong></td>
+            <td>運送会社のオーナー</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><strong>dispatcher</strong></td>
+            <td>配車オペレーター</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><strong>driver</strong></td>
+            <td>ドライバー</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><strong>shipper</strong></td>
+            <td>荷主（配送依頼者）</td>
+            <td>NOT NULL</td>
+          </tr>
+          <tr>
+            <td><strong>admin</strong></td>
+            <td>プラットフォーム管理者</td>
+            <td>NULL</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- API Endpoints -->
+    <h2>APIエンドポイント</h2>
+
+    <!-- POST /api/v1/auth/register -->
+    <div class="endpoint">
+      <div>
+        <span class="method method-post">POST</span>
+        <span class="path">/api/v1/auth/register</span>
+      </div>
+      <p class="desc">新規ユーザーの登録</p>
+    </div>
+    <div class="card">
+      <h3>リクエスト</h3>
+      <p><strong>ボディ:</strong> JSON</p>
+      <pre><code>{
+  "email": "user@example.com",
+  "password": "SecurePassword123",
+  "name": "田中太郎",
+  "role": "driver",
+  "company_id": 1,
+  "phone": "09012345678"
+}</code></pre>
+      <h3 style="margin-top: 1.5rem;">レスポンス</h3>
+      <p><strong>ステータス: 201 Created</strong></p>
+      <pre><code>{
+  "success": true,
+  "user": {
+    "id": 5,
+    "email": "user@example.com",
+    "name": "田中太郎",
+    "role": "driver",
+    "company_id": 1,
+    "phone": "09012345678",
+    "is_active": true,
+    "created_at": "2026-03-20T10:30:00Z"
+  }
+}</code></pre>
+      <p style="margin-top: 1rem;"><strong>エラーレスポンス (400 Bad Request):</strong></p>
+      <pre><code>{
+  "success": false,
+  "error": "登録に失敗しました"
+}</code></pre>
+      <p style="margin-top: 0.5rem; color: var(--gray-600);">※ エラーメッセージは詳細を統一し、ユーザー列挙攻撃を防止</p>
+    </div>
+
+    <!-- POST /api/v1/auth/login -->
+    <div class="endpoint">
+      <div>
+        <span class="method method-post">POST</span>
+        <span class="path">/api/v1/auth/login</span>
+      </div>
+      <p class="desc">ユーザーログイン</p>
+    </div>
+    <div class="card">
+      <h3>リクエスト</h3>
+      <p><strong>ボディ:</strong> JSON</p>
+      <pre><code>{
+  "email": "user@example.com",
+  "password": "SecurePassword123"
+}</code></pre>
+      <h3 style="margin-top: 1.5rem;">レスポンス</h3>
+      <p><strong>ステータス: 200 OK</strong></p>
+      <p style="color: var(--gray-600); font-size: 0.85rem;">Set-Cookie ヘッダーで HTTP-only Cookie を設定</p>
+      <pre><code>{
+  "success": true,
+  "user": {
+    "id": 5,
+    "email": "user@example.com",
+    "name": "田中太郎",
+    "role": "driver",
+    "company_id": 1,
+    "is_active": true
+  },
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}</code></pre>
+      <p style="margin-top: 1rem;"><strong>エラーレスポンス (401 Unauthorized):</strong></p>
+      <pre><code>{
+  "success": false,
+  "error": "認証に失敗しました"
+}</code></pre>
+      <p style="margin-top: 0.5rem; color: var(--gray-600);">※ エラーメッセージは統一（メールアドレスが存在しないか、パスワードが間違っているか不明瞭にする）</p>
+    </div>
+
+    <!-- POST /api/v1/auth/logout -->
+    <div class="endpoint">
+      <div>
+        <span class="method method-post">POST</span>
+        <span class="path">/api/v1/auth/logout</span>
+      </div>
+      <p class="desc">ログアウト（クッキーをクリア）</p>
+    </div>
+    <div class="card">
+      <h3>リクエスト</h3>
+      <p><strong>認証:</strong> Bearer Token (JWT)</p>
+      <p><strong>ボディ:</strong> 空</p>
+      <h3 style="margin-top: 1.5rem;">レスポンス</h3>
+      <p><strong>ステータス: 200 OK</strong></p>
+      <p style="color: var(--gray-600); font-size: 0.85rem;">Set-Cookie ヘッダーで auth_token と refresh_token を Max-Age=0 で削除</p>
+      <pre><code>{
+  "success": true,
+  "message": "ログアウトしました"
+}</code></pre>
+    </div>
+
+    <!-- POST /api/v1/auth/refresh -->
+    <div class="endpoint">
+      <div>
+        <span class="method method-post">POST</span>
+        <span class="path">/api/v1/auth/refresh</span>
+      </div>
+      <p class="desc">アクセストークンのリフレッシュ</p>
+    </div>
+    <div class="card">
+      <h3>リクエスト</h3>
+      <p><strong>認証:</strong> refresh_token (HTTP-only Cookie)</p>
+      <p><strong>ボディ:</strong> 空</p>
+      <h3 style="margin-top: 1.5rem;">レスポンス</h3>
+      <p><strong>ステータス: 200 OK</strong></p>
+      <p style="color: var(--gray-600); font-size: 0.85rem;">新しい access_token と refresh_token を発行（トークンローテーション）</p>
+      <pre><code>{
+  "success": true,
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}</code></pre>
+      <p style="margin-top: 1rem;"><strong>エラーレスポンス (401 Unauthorized):</strong></p>
+      <pre><code>{
+  "success": false,
+  "error": "リフレッシュに失敗しました"
+}</code></pre>
+    </div>
+
+    <!-- Data Flow Diagram -->
+    <h2>データフロー図</h2>
+    <div class="flow">
+      <pre>┌─────────────────────────────────────────────────────────────────────┐
+│                          クライアント                                │
+│                     (ブラウザ/モバイルアプリ)                         │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    │            │            │
+         1. 登録リクエスト  2. ログイン      3. リフレッシュ
+              (JSON)        (JSON)          (Cookie)
+                    │            │            │
+                    └────────────┼────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   HTTP ハンドラー層      │
+                    │ (Request/Response処理)   │
+                    │ ・バリデーション         │
+                    │ ・認証情報抽出           │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │  認証サービス層          │
+                    │ (ビジネスロジック)       │
+                    │ ・パスワード検証         │
+                    │ ・JWT生成               │
+                    │ ・トークンローテーション │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │ リポジトリ層             │
+                    │ (DB操作)                │
+                    │ ・ユーザー検索          │
+                    │ ・ユーザー作成          │
+                    │ ・トークン保存          │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   MySQL Database        │
+                    │ (users, tokens tables)   │
+                    └─────────────────────────┘
+
+レスポンス:
+1. Set-Cookie (auth_token)
+2. Set-Cookie (refresh_token)
+3. JSON with user info
+</pre>
+    </div>
+
+    <!-- Password Policy -->
+    <h2>パスワードポリシー</h2>
+    <div class="card">
+      <h3>パスワード仕様</h3>
+      <ul>
+        <li><strong>最小文字数:</strong> 6文字</li>
+        <li><strong>最大文字数:</strong> 72文字 (bcrypt の制限)</li>
+        <li><strong>ハッシュ化:</strong> bcrypt (cost = 10)</li>
+        <li><strong>ソルト:</strong> bcrypt が自動生成</li>
+      </ul>
+      <p style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);">パスワードは登録時に bcrypt でハッシュ化され、平文は保存されません。ログイン時には登録されたハッシュとの比較を行います。</p>
+    </div>
+
+    <!-- Cookie Specification -->
+    <h2>クッキー仕様</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>クッキー名</th>
+            <th>内容</th>
+            <th>有効期限</th>
+            <th>フラグ</th>
+            <th>説明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>auth_token</code></td>
+            <td>JWT (access token)</td>
+            <td>15分</td>
+            <td>HttpOnly, Secure*, SameSite=Strict</td>
+            <td>API リクエスト認証用の短期トークン</td>
+          </tr>
+          <tr>
+            <td><code>refresh_token</code></td>
+            <td>JWT (refresh token)</td>
+            <td>7日</td>
+            <td>HttpOnly, Secure*, SameSite=Strict</td>
+            <td>新しい access_token を取得するためのトークン</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 1rem; color: var(--gray-600); font-size: 0.85rem;">* Secure フラグは本番環境では必須（HTTPS通信のみ）。開発環境では環境変数で制御可能。</p>
+    </div>
+
+    <!-- Security Considerations -->
+    <h2>セキュリティ考慮事項 <span class="badge badge-security">重要</span></h2>
+    <div class="card">
+      <h3>1. bcrypt ハッシング</h3>
+      <ul>
+        <li>パスワードはプレーンテキストで保存されない</li>
+        <li>cost パラメータ = 10（計算時間と安全性のバランス）</li>
+        <li>72文字の制限に注意（登録時にバリデーション）</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">2. HTTP-only Cookie</h3>
+      <ul>
+        <li>JavaScript からアクセス不可（XSS 攻撃対策）</li>
+        <li>ブラウザが自動的にリクエストに含める（CSRF 対策と組み合わせ）</li>
+        <li>Secure フラグで HTTPS 通信のみに制限（本番環境）</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">3. エラーメッセージ統一化</h3>
+      <ul>
+        <li>ログイン失敗時は「認証に失敗しました」に統一</li>
+        <li>メールアドレスの存在有無を判定されない（ユーザー列挙攻撃対策）</li>
+        <li>ログは内部的に詳細を記録</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">4. リフレッシュトークンローテーション</h3>
+      <ul>
+        <li>新しい access_token 取得時に refresh_token も更新</li>
+        <li>古い refresh_token は使用不可に</li>
+        <li>盗まれたトークンの悪用期間を短縮</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">5. トークン検証</h3>
+      <ul>
+        <li>署名検証（HS256 またはRS256）</li>
+        <li>有効期限の確認</li>
+        <li>ブラックリスト確認（ログアウト時）</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">6. CSRF 対策</h3>
+      <ul>
+        <li>SameSite=Strict でクロスオリジンリクエスト制限</li>
+        <li>POST リクエストでの状態変更</li>
+      </ul>
+    </div>
+
+    <!-- Implementation Architecture -->
+    <h2>実装アーキテクチャ</h2>
+    <div class="card">
+      <h3>3層アーキテクチャ</h3>
+      <p style="margin-bottom: 1rem;">認証機能は以下の3層に分離します:</p>
+
+      <h4>1. ハンドラー層 (Handler Layer)</h4>
+      <ul>
+        <li><strong>責務:</strong> HTTP リクエスト/レスポンス処理のみ</li>
+        <li><strong>処理内容:</strong>
+          <ul>
+            <li>リクエストボディのパース</li>
+            <li>基本的なバリデーション（形式チェック）</li>
+            <li>クライアントからの認証情報抽出</li>
+            <li>レスポンスの構築と返却</li>
+            <li>HTTP ステータスコードの設定</li>
+          </ul>
+        </li>
+        <li><strong>例:</strong> <code>handlers/auth.go</code></li>
+      </ul>
+
+      <h4 style="margin-top: 1rem;">2. サービス層 (Service Layer)</h4>
+      <ul>
+        <li><strong>責務:</strong> ビジネスロジック処理</li>
+        <li><strong>処理内容:</strong>
+          <ul>
+            <li>パスワード検証（bcrypt.CompareHashAndPassword）</li>
+            <li>JWT トークンの生成と署名</li>
+            <li>ユーザー登録ロジック（バリデーション、重複チェック）</li>
+            <li>トークンローテーション</li>
+            <li>セッション管理</li>
+          </ul>
+        </li>
+        <li><strong>例:</strong> <code>services/auth.go</code></li>
+      </ul>
+
+      <h4 style="margin-top: 1rem;">3. リポジトリ層 (Repository Layer)</h4>
+      <ul>
+        <li><strong>責務:</strong> データベース操作</li>
+        <li><strong>処理内容:</strong>
+          <ul>
+            <li>ユーザーの検索（メールアドレスで）</li>
+            <li>ユーザーの作成</li>
+            <li>ユーザー情報の更新</li>
+            <li>トークンの保存</li>
+            <li>トークンの削除（ログアウト時）</li>
+          </ul>
+        </li>
+        <li><strong>例:</strong> <code>repositories/user.go</code></li>
+      </ul>
+
+      <h3 style="margin-top: 2rem;">処理フロー例: ログイン</h3>
+      <pre><code>ハンドラー
+  1. リクエストボディをパース → email, password を取得
+  2. 形式バリデーション （email フォーマット、password 長）
+  3. サービス層に処理依頼
+         ↓
+サービス
+  4. リポジトリから email でユーザー検索
+  5. bcrypt でパスワード検証
+  6. JWT トークン生成
+  7. トークンをリポジトリで保存（オプション）
+  8. ユーザー情報とトークンを返却
+         ↓
+ハンドラー
+  9. Set-Cookie ヘッダーを設定
+  10. レスポンス JSON を作成
+  11. 200 OK を返却</code></pre>
+    </div>
+
+    <!-- Error Handling -->
+    <h2>エラーハンドリング</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>エラー</th>
+            <th>HTTP ステータス</th>
+            <th>メッセージ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>パスワード短すぎ</td>
+            <td>400</td>
+            <td>登録に失敗しました</td>
+          </tr>
+          <tr>
+            <td>メール重複</td>
+            <td>400</td>
+            <td>登録に失敗しました</td>
+          </tr>
+          <tr>
+            <td>メール未検出（ログイン）</td>
+            <td>401</td>
+            <td>認証に失敗しました</td>
+          </tr>
+          <tr>
+            <td>パスワード不一致</td>
+            <td>401</td>
+            <td>認証に失敗しました</td>
+          </tr>
+          <tr>
+            <td>無効なトークン</td>
+            <td>401</td>
+            <td>認証に失敗しました</td>
+          </tr>
+          <tr>
+            <td>トークン期限切れ</td>
+            <td>401</td>
+            <td>認証に失敗しました</td>
+          </tr>
+          <tr>
+            <td>DB エラー</td>
+            <td>500</td>
+            <td>内部サーバーエラー</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Implementation Checklist -->
+    <h2>実装チェックリスト</h2>
+    <div class="card">
+      <h3>コア機能</h3>
+      <ul>
+        <li>☐ ユーザー登録エンドポイント (POST /api/v1/auth/register)</li>
+        <li>☐ ログインエンドポイント (POST /api/v1/auth/login)</li>
+        <li>☐ ログアウトエンドポイント (POST /api/v1/auth/logout)</li>
+        <li>☐ トークンリフレッシュエンドポイント (POST /api/v1/auth/refresh)</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">セキュリティ</h3>
+      <ul>
+        <li>☐ bcrypt によるパスワードハッシング</li>
+        <li>☐ JWT トークン生成と検証</li>
+        <li>☐ HTTP-only Cookie の設定</li>
+        <li>☐ エラーメッセージの統一化</li>
+        <li>☐ トークンローテーション</li>
+        <li>☐ Secure フラグの環境変数制御</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">テスト</h3>
+      <ul>
+        <li>☐ ユーザー登録テスト（成功・失敗）</li>
+        <li>☐ ログインテスト（成功・失敗）</li>
+        <li>☐ ログアウトテスト</li>
+        <li>☐ トークンリフレッシュテスト</li>
+        <li>☐ パスワード検証テスト</li>
+        <li>☐ トークン署名検証テスト</li>
+        <li>☐ エラーメッセージ統一テスト</li>
+      </ul>
+
+      <h3 style="margin-top: 1rem;">ドキュメント</h3>
+      <ul>
+        <li>☐ API ドキュメント（swagger/openapi）</li>
+        <li>☐ コード例（クライアント側）</li>
+        <li>☐ セキュリティガイドライン</li>
+      </ul>
+    </div>
+
+    <!-- References -->
+    <h2>参考資料</h2>
+    <div class="card">
+      <ul>
+        <li><strong>JWT (JSON Web Tokens):</strong> <a href="https://jwt.io/">https://jwt.io/</a></li>
+        <li><strong>bcrypt:</strong> <a href="https://en.wikipedia.org/wiki/Bcrypt">https://en.wikipedia.org/wiki/Bcrypt</a></li>
+        <li><strong>OWASP Authentication Cheat Sheet:</strong> <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP</a></li>
+        <li><strong>HTTP-only Cookie:</strong> <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies">MDN Web Docs</a></li>
+        <li><strong>SameSite Cookie:</strong> <a href="https://web.dev/samesite-cookies-explained/">web.dev</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>delivery-api 仕様書 | 認証機能 | 最終更新: 2026-03-20</p>
+      <p style="margin-top: 0.3rem; font-size: 0.75rem;">このドキュメントは内部用です。無断転載を禁じます。</p>
+    </div>
+  </footer>
+</body>
+</html>
