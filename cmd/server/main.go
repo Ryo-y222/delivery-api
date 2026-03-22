@@ -58,6 +58,7 @@ func main() {
 
 	// Handler
 	authHandler := handler.NewAuthHandler(authService)
+	userHandler := handler.NewUserHandler(userRepo)
 
 	// Ginルーター作成
 	r := gin.Default()
@@ -88,7 +89,8 @@ func main() {
 	api.Use(middleware.AuthMiddleware(jwtSecret)) // ← このグループ配下は全て認証必須
 	{
 		// ここに認証が必要なエンドポイントを追加していく（次のIssueで）
-
+		api.GET("/users/me", userHandler.GetMe)
+		api.POST("/auth/logout", authHandler.Logout)
 	}
 
 	// ポート8080で起動
