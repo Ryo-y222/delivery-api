@@ -79,6 +79,7 @@ func main() {
 	auth := r.Group("/api/v1/auth")
 	{
 		auth.POST("/register", authHandler.Register)
+		auth.POST("/login", authHandler.Login)
 	}
 
 	// ポート8080で起動
