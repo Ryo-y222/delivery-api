@@ -10,6 +10,8 @@ import (
 	"github.com/ryo-y222/delivery-api/internal/handler"
 	"github.com/ryo-y222/delivery-api/internal/middleware"
 	"github.com/ryo-y222/delivery-api/internal/model"
+	"github.com/ryo-y222/delivery-api/internal/repository"
+	"github.com/ryo-y222/delivery-api/internal/service"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -37,11 +39,25 @@ func main() {
 
 	log.Println("✅ DB接続成功！")
 
+	//JWT_SECRET読み込み
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is not set")
+	}
+
 	//AutoMigrate
 	if err := db.AutoMigrate(&model.User{}); err != nil {
 		log.Fatal("❌ マイグレーション失敗:", err)
 	}
 	log.Println("✅ マイグレーション完了！")
+
+	// Repository
+	userRepo := repository.NewUserRepository(db)
+	// Service
+	authService := service.NewAuthService(userRepo, jwtSecret)
+
+	// Handler
+	authHandler := handler.NewAuthHandler(authService)
 
 	// Ginルーター作成
 	r := gin.Default()
@@ -58,6 +74,12 @@ func main() {
 			"message": "Hello from Delivery API!",
 		})
 	})
+
+	//認証ルート
+	auth := r.Group("/api/v1/auth")
+	{
+		auth.POST("/register", authHandler.Register)
+	}
 
 	// ポート8080で起動
 	port := os.Getenv("PORT")
