@@ -9,7 +9,7 @@ type UserViolation struct {
 	User          User        `json:"user" gorm:"foreignKey:UserID" binding:"-"`
 	ChatMessageID uint        `json:"chat_message_id"`
 	ChatMessage   ChatMessage `json:"chat_message" gorm:"foreignKey:ChatMessageID" binding:"-"`
-	ViolationType string      `json:"violation_type" gorm:"type:varchar(30)"`
+	ViolationType string      `json:"violation_type" gorm:"type:varchar(30); not null"`
 	Detail        string      `json:"detail"`
 	CreatedAt     time.Time   `json:"created_at"`
 }

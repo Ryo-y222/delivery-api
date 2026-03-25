@@ -18,9 +18,9 @@ type Payment struct {
 	PayerID         uint       `json:"payer_id"`
 	Payer           User       `json:"payer" gorm:"foreignKey:PayerID" binding:"-"`
 	Amount          int        `json:"amount"`
-	Currency        string     `json:"currency" gorm:"type:varchar(10);default:jpy"`
+	Currency        string     `json:"currency" gorm:"type:varchar(10);default:jpy;not null"`
 	StripePaymentID string     `json:"stripe_payment_id" gorm:"type:varchar(255)"`
-	Status          string     `json:"status" gorm:"type:varchar(20);default:pending"`
+	Status          string     `json:"status" gorm:"type:varchar(20);default:pending;not null"`
 	PaidAt          *time.Time `json:"paid_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`

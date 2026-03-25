@@ -16,8 +16,8 @@ type ChatMessage struct {
 	ChatRoom       ChatRoom  `json:"chat_room" gorm:"foreignKey:ChatRoomID" binding:"-"`
 	SenderID       uint      `json:"sender_id"`
 	Sender         User      `json:"sender" gorm:"foreignKey:SenderID" binding:"-"`
-	Content        string    `json:"content" gorm:"type:text"`
-	Status         string    `json:"status" gorm:"type:varchar(20);default:sent"`
+	Content        string    `json:"content" gorm:"type:text; not null"`
+	Status         string    `json:"status" gorm:"type:varchar(20);default:sent;not null"`
 	FilteredReason string    `json:"filtered_reason"`
 	CreatedAt      time.Time `json:"created_at" gorm:"index:idx_chat_messages_room_created"`
 }

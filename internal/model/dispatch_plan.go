@@ -19,8 +19,8 @@ type DispatchPlan struct {
 	Vehicle   Vehicle   `json:"vehicle" gorm:"foreignKey:VehicleID" binding:"-"`
 	DriverID  uint      `json:"driver_id"`
 	Driver    User      `json:"driver" gorm:"foreignKey:DriverID" binding:"-"`
-	PlanDate  time.Time `json:"plan_date" gorm:"type:date;index:idx_dispatch_plans_company_date"`
-	Status    string    `json:"status" gorm:"type:varchar(20);default:planned;index:idx_dispatch_plans_status"`
+	PlanDate  time.Time `json:"plan_date" gorm:"type:date;index:idx_dispatch_plans_company_date;not null"`
+	Status    string    `json:"status" gorm:"type:varchar(20);default:planned;not null;index:idx_dispatch_plans_status"`
 	Note      string    `json:"note"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

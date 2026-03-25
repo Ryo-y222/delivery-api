@@ -21,9 +21,9 @@ type Subscription struct {
 	ID                   uint      `json:"id" gorm:"primaryKey"`
 	CompanyID            uint      `json:"company_id" gorm:"index:idx_subscriptions_company"`
 	Company              Company   `json:"company" gorm:"foreignKey:CompanyID" binding:"-"`
-	Plan                 string    `json:"plan" gorm:"type:varchar(20);default:free"`
+	Plan                 string    `json:"plan" gorm:"type:varchar(20);default:free;not null"`
 	StripeSubscriptionID string    `json:"stripe_subscription_id" gorm:"type:varchar(255)"`
-	Status               string    `json:"status" gorm:"type:varchar(20);default:active"`
+	Status               string    `json:"status" gorm:"type:varchar(20);default:active;not null"`
 	CurrentPeriodStart   time.Time `json:"current_period_start"`
 	CurrentPeriodEnd     time.Time `json:"current_period_end"`
 	CreatedAt            time.Time `json:"created_at"`

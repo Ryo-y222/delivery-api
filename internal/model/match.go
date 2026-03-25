@@ -30,9 +30,9 @@ type Match struct {
 	CargoWeight        float64   `json:"cargo_weight"`
 	CargoDescription   string    `json:"cargo_description"`
 	Message            string    `json:"message"`
-	Status             string    `json:"status" gorm:"type:varchar(20);default:pending;index:idx_matches_status"`
+	Status             string    `json:"status" gorm:"type:varchar(20);default:pending;not null;index:idx_matches_status"`
 	RejectReason       string    `json:"reject_reason"`
-	RequestType        string    `json:"request_type" gorm:"type:varchar(30);default:shipper_to_company"`
+	RequestType        string    `json:"request_type" gorm:"type:varchar(30);default:shipper_to_company;not null"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
