@@ -75,11 +75,20 @@ func main() {
 		})
 	})
 
-	//認証ルート
+	// 認証ルート（認証不要）
 	auth := r.Group("/api/v1/auth")
 	{
 		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
+	}
+
+	// ⭐ 認証が必要なルート
+	api := r.Group("/api/v1")
+
+	api.Use(middleware.AuthMiddleware(jwtSecret)) // ← このグループ配下は全て認証必須
+	{
+		// ここに認証が必要なエンドポイントを追加していく（次のIssueで）
+
 	}
 
 	// ポート8080で起動
@@ -88,7 +97,5 @@ func main() {
 		port = "8080"
 	}
 
-	_ = db // 後のIssueで使う
 	r.Run(":" + port)
-
 }
