@@ -11,6 +11,7 @@ import (
 	"github.com/ryo-y222/delivery-api/internal/middleware"
 	"github.com/ryo-y222/delivery-api/internal/model"
 	"github.com/ryo-y222/delivery-api/internal/repository"
+	"github.com/ryo-y222/delivery-api/internal/seed"
 	"github.com/ryo-y222/delivery-api/internal/service"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -46,10 +47,33 @@ func main() {
 	}
 
 	//AutoMigrate
-	if err := db.AutoMigrate(&model.User{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Company{},
+		&model.User{},
+		&model.DriverProfile{},       // ドライバー台帳（userを参照）
+		&model.Qualification{},       // 資格マスタ（誰も参照しない）
+		&model.DriverQualification{}, //中間テーブル
+		&model.Vehicle{},
+		&model.VehicleInspection{}, //点検記録
+		&model.DispatchPlan{},
+		&model.TripLeg{},
+		&model.Match{},
+		&model.Payment{},
+		&model.ChatRoom{},
+		&model.ChatMessage{},
+
+		&model.BlockedPattern{},
+		&model.UserViolation{},
+		&model.Review{},
+		&model.Subscription{},
+		&model.Tracking{},
+	); err != nil {
 		log.Fatal("❌ マイグレーション失敗:", err)
 	}
 	log.Println("✅ マイグレーション完了！")
+
+	//シード作成
+	seed.SeedBlockedPatterns(db)
 
 	// Repository
 	userRepo := repository.NewUserRepository(db)

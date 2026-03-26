@@ -70,9 +70,11 @@ func (s *AuthService) Register(email, password, name, role, company, phone strin
 		PasswordHash: hashedPassword,
 		Name:         name,
 		Role:         role,
-		Company:      company,
-		Phone:        phone,
+		// Company:      company,
+		Phone: phone,
 	}
+	// ！！一旦捨てておく、リポジトリがない。
+	_ = company
 
 	//4.ユーザー情報を登録。
 	if err := s.repo.Create(user); err != nil {
