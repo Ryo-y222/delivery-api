@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gin-gonic/gin"
@@ -42,7 +43,7 @@ func TestHealth_Check_Healthy(t *testing.T) {
 	db, cleanup, _ := setupMockGormDB(t)
 	defer cleanup()
 
-	h := NewHealthHandler(db)
+	h := NewHealthHandler(db, "test", time.Now())
 
 	r := gin.New()
 	r.GET("/health", h.Check)
@@ -87,7 +88,7 @@ func TestHealth_Check_Unhealthy_WhenPingFails(t *testing.T) {
 	// Ping を失敗させる（DBをCloseすると Ping が connection refused 相当で失敗する）
 	closeDB()
 
-	h := NewHealthHandler(db)
+	h := NewHealthHandler(db, "test", time.Now())
 
 	r := gin.New()
 	r.GET("/health", h.Check)

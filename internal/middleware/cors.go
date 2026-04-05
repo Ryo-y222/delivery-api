@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +12,7 @@ func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		allowOrigin := os.Getenv("CORS_ORIGIN")
 		if allowOrigin == "" {
-			allowOrigin = "http://localhost:3000"
+			log.Fatal("CORS_ORIGIN is not set")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Origin", allowOrigin)
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
