@@ -100,11 +100,12 @@ func main() {
 		})
 	})
 
-	// 認証ルート（認証不要）
+	// 認証関連ルート（jwtトークン不要）
 	auth := r.Group("/api/v1/auth")
 	{
 		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/refresh", authHandler.Refresh)
 	}
 
 	// ⭐ 認証が必要なルート
@@ -115,6 +116,7 @@ func main() {
 		// ここに認証が必要なエンドポイントを追加していく（次のIssueで）
 		api.GET("/users/me", userHandler.GetMe)
 		api.POST("/auth/logout", authHandler.Logout)
+
 	}
 
 	// ポート8080で起動

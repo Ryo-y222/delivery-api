@@ -126,3 +126,23 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	)
 	c.JSON(http.StatusOK, gin.H{"message": "ログアウト成功"})
 }
+
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	//cookieからtokenを取得
+	token, err := c.Cookie("auth_token")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "認証が必要です。"})
+		return
+	}
+
+	//トークンを検証して新しいトークンを発行
+	newToken, user, err := h.authService.Refresh(token)
+
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "セッションの有効期限が切れました"})
+		return
+	}
+
+	setAuthCookie(c, newToken, h.secureCookie)
+	c.JSON(http.StatusOK, gin.H{"user": toUserResponse(user)})
+}
