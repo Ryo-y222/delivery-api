@@ -84,7 +84,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	setAuthCookie(c, token, h.secureCookie)
 
-	c.JSON(http.StatusCreated, gin.H{"id": user.ID})
+	c.JSON(http.StatusCreated, gin.H{"user": toUserResponse(user)})
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
