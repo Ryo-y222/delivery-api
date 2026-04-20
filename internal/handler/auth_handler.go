@@ -49,6 +49,7 @@ func toUserResponse(u *model.User) UserResponse {
 }
 
 func setAuthCookie(c *gin.Context, token string, secure bool) {
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(
 		"auth_token",
 		token,
@@ -83,7 +84,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	setAuthCookie(c, token, h.secureCookie)
 
-	c.JSON(http.StatusCreated, gin.H{"id": user.ID})
+	c.JSON(http.StatusCreated, gin.H{"user": toUserResponse(user)})
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -113,13 +114,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(
 		"auth_token",
 		"",
 		-1,
 		"/",
 		"",
-		false,
+		h.secureCookie,
 		true,
 	)
 	c.JSON(http.StatusOK, gin.H{"message": "ログアウト成功"})
