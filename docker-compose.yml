@@ -31,6 +31,7 @@ services:
       DB_NAME: delivery_db
       JWT_SECRET: ${JWT_SECRET}
       PORT: "8080"
+      CORS_ORIGIN: "http://localhost:5173" 
     depends_on:
       db:
         condition: service_healthy
