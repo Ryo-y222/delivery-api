@@ -89,3 +89,27 @@ func (s *AuthService) Register(email, password, name, role, company, phone strin
 	}
 	return user, token, nil
 }
+
+func (s *AuthService) Refresh(tokenString string) (*model.User, string, error) {
+	//トークンを検証してuserIDを取得
+	claims, err := util.ParseToken(tokenString, s.jwtSecret)
+
+	if err != nil {
+		return nil, "", ErrInvalidCredentials
+	}
+
+	//ユーザーを取得
+	user, err := s.repo.GetByID(claims.UserID)
+	if err != nil {
+		return nil, "", ErrInvalidCredentials
+	}
+
+	//新しいトークンを発行
+	newToken, err := util.GenerateToken(user.ID, user.Email, user.Role, s.jwtSecret)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return user, newToken, nil
+
+}
